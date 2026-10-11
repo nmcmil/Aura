@@ -185,7 +185,9 @@ class Window(AppWindow):
         if not hasattr(self,'workspace'): return
         opened=self.compact and not self.creation.get_folded()
         width=CREATIVE['panel_left_width']+2*CREATIVE['panel_inset']
-        self.preview_host.set_margin_start(0 if self.compact else width)
+        rtl=self.preview_host.get_direction()==Gtk.TextDirection.RTL
+        self.preview_host.set_margin_start(0 if self.compact or rtl else width)
+        self.preview_host.set_margin_end(width if not self.compact and rtl else 0)
         cap=0
         if opened:
             _,natural,*_=self.creation.measure(Gtk.Orientation.VERTICAL,max(1,self.workspace.get_width()))

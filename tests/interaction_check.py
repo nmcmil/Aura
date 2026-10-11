@@ -236,6 +236,10 @@ def light():
 def rtl():
     win=app.get_active_window(); capture(win,'rtl-large-text')
     assert win.action_center.bar.get_direction()==Gtk.TextDirection.RTL
+    assert win.creation.get_page()=='adjust'
+    ok,panel_bounds=win.creation.compute_bounds(win.host)
+    preview_ok,preview_bounds=win.preview_host.compute_bounds(win.host)
+    assert ok and preview_ok and preview_bounds.get_x()>=panel_bounds.get_x()+panel_bounds.get_width(),'Preview overlaps native left panel in RTL'
     # Native range keyboard controller: arrows change the value; Esc folds the bar.
     slider=win.controls['angle']; old=slider.value
     controllers=slider.range.observe_controllers()
