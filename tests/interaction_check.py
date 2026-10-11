@@ -114,8 +114,9 @@ def colors():
 def position():
     win=app.get_active_window(); before=win.design.to_dict(); undo_count=len(win.undo_stack)
     # Emit the actual pointer gesture over the rendered image's center.
-    x,y=win.picture.get_width()/2,win.picture.get_height()/2
+    x,y=win.picture.get_width()/2+10,win.picture.get_height()/2
     win.position_drag.emit('drag-begin',x,y)
+    assert win.design.to_dict()==before,'Grabbing the preview must not jump its pattern'
     win.position_drag.emit('drag-update',24.0,12.0)
     win.position_drag.emit('drag-end',24.0,12.0)
     assert len(win.undo_stack)==undo_count+1

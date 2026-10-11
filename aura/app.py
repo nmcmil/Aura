@@ -320,14 +320,14 @@ class Window(AppWindow):
         left,top=(w-image_w)/2,(h-image_h)/2
         self.drag_origin=None
         if not image_w or not image_h or not (left<=x<=left+image_w and top<=y<=top+image_h): return
-        self.begin_gesture(); self.drag_origin=(x,y,left,top,image_w,image_h)
-        self.position_move(gesture,0,0)
+        self.begin_gesture()
+        self.drag_origin=(self.design.center_x,self.design.center_y,image_w,image_h)
 
     def position_move(self,gesture,dx,dy):
         if not getattr(self,'drag_origin',None): return
-        x,y,left,top,w,h=self.drag_origin
-        self.change('center_x',max(0,min(1,(x+dx-left)/w)))
-        self.change('center_y',max(0,min(1,(y+dy-top)/h)))
+        x,y,w,h=self.drag_origin
+        self.change('center_x',max(0,min(1,x+dx/w)))
+        self.change('center_y',max(0,min(1,y+dy/h)))
         self.sync_controls()
 
     def reset_adjustments(self):
@@ -352,10 +352,11 @@ class Window(AppWindow):
     def thumbnail_ready(self,epoch,picture,w,h,data):
         self.thumbnail_busy=False
         if not self.closed and epoch==self.thumbnail_epoch and data is not None:
-            texture=Gdk.MemoryTexture.new(w,h,Gdk.MemoryFormat.R8G8B8,GLib.Bytes.new(data.tobytes()),w*3)
             if callable(picture): picture(data)
-            elif isinstance(picture,MediaTile): picture.set_picture(texture)
-            else: picture.set_paintable(texture)
+            else:
+                texture=Gdk.MemoryTexture.new(w,h,Gdk.MemoryFormat.R8G8B8,GLib.Bytes.new(data.tobytes()),w*3)
+                if isinstance(picture,MediaTile): picture.set_picture(texture)
+                else: picture.set_paintable(texture)
         self.next_thumbnail(); return False
 
     def close_requested(self,*_):
