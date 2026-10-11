@@ -89,7 +89,7 @@ def start():
     assert len(win.choice_buttons)==7
     report['visual_style_choices']='passed'
     win.action_center.fold_panel(); win.open_panel('colors')
-    win.palette_picker.set_current('Meadow'); win.palette_picker.emit('changed','Meadow')
+    win.palette_tiles['Meadow'].on_activate()
     assert win.design.colors==PALETTES['Meadow'] and win.design.palette=='Meadow'
     win.edit_colors(); later(colors); return False
 
@@ -207,14 +207,62 @@ def library():
     app.activate_action('design-save',None)
     assert len(win.library.designs())==1
     report['library_open_document_boundary']='passed'
+    win.action_center.fold_panel(); later(size_stability)
+
+
+@guard
+def size_stability():
+    win=app.get_active_window()
+    win.before_size=(win.picture.get_width(),win.picture.get_height())
+    win.bar_anchor('size').emit('clicked'); later(zoom)
+
+
+@guard
+def zoom():
+    win=app.get_active_window()
+    assert (win.picture.get_width(),win.picture.get_height())==win.before_size,'Size resized the wallpaper'
+    assert abs(win.canvas_width.get_width()-win.canvas_height.get_width())<=1
+    assert win.canvas_width.label.get_text()=='Width'
+    before=win.design.to_dict(); dimensions=(win.width,win.height); revision=win.revision
+    app.activate_action('view-zoom-in',None); assert win.zoom_preview.zoom==1.25
+    app.activate_action('view-zoom-out',None); assert win.zoom_preview.zoom==1
+    app.activate_action('view-zoom-in',None); app.activate_action('view-zoom-reset',None)
+    assert win.zoom_preview.zoom==1
+    class Wheel:
+        def get_current_event_state(self): return Gdk.ModifierType.CONTROL_MASK
+    assert win.scroll_zoom(Wheel(),0,-1) and win.zoom_preview.zoom==1.25
+    win.set_zoom(1)
+    assert win.design.to_dict()==before and (win.width,win.height)==dimensions and win.revision==revision
+    assert win.bar_anchor('size').bar_words.get_text()==f'{win.width:,} × {win.height:,}'
+    report['size_stable_side_by_side_zoom_pixels_only']='passed'
     win.show_monitors(); later(monitors)
 
 
 @guard
 def monitors():
     win=app.get_active_window()
+    assert win.canvas_stack.get_visible_child() is win.monitor_canvas
+    capture(win,'monitor-main-canvas-before-add')
+    assert win.monitor_canvas.get_width()>500 and win.monitor_canvas.get_height()>200,(win.get_width(),win.get_height(),win.monitor_canvas.get_width(),win.monitor_canvas.get_height())
+    assert not win.monitor_canvas.is_ancestor(win.action_center.panel)
     panel_row(win,'Add display').emit('clicked')
     assert len(win.monitors)==2
+    later(monitor_dragging); return False
+
+
+@guard
+def monitor_dragging():
+    win=app.get_active_window()
+    w,h=win.monitor_canvas.get_width(),win.monitor_canvas.get_height()
+    scale=min((w-32)/5120,(h-32)/1440)
+    left=(w-5120*scale)/2; top=(h-1440*scale)/2
+    win.monitor_drag.emit('drag-begin',left+1280*scale,top+720*scale)
+    win.monitor_drag.emit('drag-update',0.,-100*scale)
+    win.monitor_drag.emit('drag-end',0.,-100*scale)
+    assert win.monitors[0].y==-100,'Dragging on the main canvas failed'
+    assert win.monitor_fields[(id(win.monitors[0]),'y')].get_value()==-100
+    win.monitor_fields[(id(win.monitors[0]),'y')].set_value(0)
+    report['main_canvas_display_drag']='passed'
     first=win.monitors[0]
     for key,value in (('width',3840),('height',2160)):
         field=win.monitor_fields[(id(first),key)]

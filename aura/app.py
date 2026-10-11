@@ -9,16 +9,15 @@ gi.require_version('Gtk','4.0')
 gi.require_version('Adw','1')
 gi.require_version('LumaUI','1')
 from gi.repository import Gtk, Adw, Gdk, Gio, GLib, LumaUI, Pango, Graphene
-from luma_appkit import (AppWindow, Island, Command, CommandGroup, CommandRegistry, install_appkit,
+from luma_appkit import (AppWindow, Command, CommandGroup, CommandRegistry, install_appkit,
                          ColorSwatch, IconButton, ActionCenter, BarAction,
                          PanelRow, PanelHeading, PanelField,
-                         BarChip, BarWidget, ToastHost, Toast, MediaTile, TextField, FloatingPanel, CreativeWorkspace, TextButton, PropertySection, PropertyNumber, PropertyChoice, evaluate_number, apply_type)
+                         ToastHost, Toast, MediaTile, TextField, FloatingPanel, CreativeWorkspace, TextButton, PropertySection, PropertyNumber, PropertyChoice, evaluate_number, apply_type)
 from .model import Design, Monitor, PALETTES, EFFECTS, PRESETS, bounds, dimensions
 from .render import pixels, export_png, Cancelled
 from .store import Library
 from .studio import STYLE_NOTES, ADJUSTMENTS, adjustment_visible
 from luma_appkit.lumaui_tokens import CREATIVE
-from luma_appkit.bar_items import identity_chip
 from luma_appkit.action_bubble import MenuItem
 
 APP_ID='io.github.nmcmil.Aura'
@@ -51,6 +50,29 @@ class PreviewViewport(Gtk.Widget):
             bounds=Graphene.Rect(); bounds.init(0,0,self.get_width(),self.get_height())
             snapshot.append_color(color,bounds)
         self.snapshot_child(self.child,snapshot)
+
+    def do_dispose(self):
+        if self.child.get_parent() is self: self.child.unparent()
+
+class ZoomPreview(Gtk.Widget):
+    """Transform wallpaper pixels only; layout and export resolution stay fixed."""
+    def __init__(self,child):
+        super().__init__(hexpand=True,vexpand=True,overflow=Gtk.Overflow.HIDDEN)
+        self.child=child; child.set_parent(self); self.zoom=1.0
+
+    def do_measure(self,orientation,for_size): return 1,1,-1,-1
+
+    def do_size_allocate(self,width,height,baseline):
+        allocation=Gdk.Rectangle(); allocation.x=0; allocation.y=0
+        allocation.width=width; allocation.height=height
+        self.child.size_allocate(allocation,baseline)
+
+    def do_snapshot(self,snapshot):
+        snapshot.save()
+        point=Graphene.Point(); point.init(self.get_width()/2,self.get_height()/2)
+        snapshot.translate(point); snapshot.scale(self.zoom,self.zoom)
+        point.init(-self.get_width()/2,-self.get_height()/2); snapshot.translate(point)
+        self.snapshot_child(self.child,snapshot); snapshot.restore()
 
     def do_dispose(self):
         if self.child.get_parent() is self: self.child.unparent()
@@ -91,6 +113,10 @@ class Window(AppWindow):
                 Command('exports.open','Export history',self.show_history),
                 Command('design.reset','Reset adjustments',self.reset_adjustments),
                 Command('canvas.monitors','Arrange displays…',self.show_monitors),
+                Command('view.zoom-in','Zoom in',lambda:self.zoom_by(1),shortcut=('Ctrl','plus')),
+                Command('view.zoom-out','Zoom out',lambda:self.zoom_by(-1),shortcut=('Ctrl','minus')),
+                Command('view.zoom-reset','Reset zoom',lambda:self.set_zoom(1),shortcut=('Ctrl','0')),
+                Command('view.zoom-equal','Zoom in',lambda:self.zoom_by(1),shortcut=('Ctrl','equal')),
             )),
         ])
         super().__init__(application=app,app_id=APP_ID,title='Aura',icon_name=APP_ID,
@@ -100,14 +126,21 @@ class Window(AppWindow):
         self.picture=Gtk.Picture(can_shrink=True,hexpand=True,vexpand=True,
                                  content_fit=Gtk.ContentFit.CONTAIN)
         self.picture.update_property([Gtk.AccessibleProperty.LABEL],['Live wallpaper preview'])
-        padded(self.picture,24); self.picture.set_margin_top(80)
+        self.zoom_preview=ZoomPreview(self.picture)
+        self.canvas_stack=Gtk.Stack(hexpand=True,vexpand=True,transition_type=Gtk.StackTransitionType.NONE)
+        self.canvas_stack.set_hhomogeneous(False); self.canvas_stack.set_vhomogeneous(False)
+        self.canvas_stack.add_named(self.zoom_preview,'wallpaper')
+        padded(self.canvas_stack,24); self.canvas_stack.set_margin_top(80)
+        self.zoom_scroll=Gtk.EventControllerScroll.new(Gtk.EventControllerScrollFlags.VERTICAL)
+        self.zoom_scroll.connect('scroll',self.scroll_zoom)
+        self.zoom_preview.add_controller(self.zoom_scroll)
         self.picture.set_tooltip_text('Drag the wallpaper to move its color pattern')
         self.position_drag=Gtk.GestureDrag()
         self.position_drag.connect('drag-begin',self.position_begin)
         self.position_drag.connect('drag-update',self.position_move)
         self.position_drag.connect('drag-end',lambda *_:self.end_gesture())
-        self.picture.add_controller(self.position_drag)
-        self.work.append(self.picture)
+        self.zoom_preview.add_controller(self.position_drag)
+        self.work.append(self.canvas_stack)
         self.preview_host=Gtk.Overlay(child=self.work,hexpand=True,vexpand=True)
         self.creation_pages={key:box(0) for key in ('style','colors','adjust')}
         self.changing_creation=False
@@ -124,17 +157,14 @@ class Window(AppWindow):
         self.host=ToastHost(self.workspace); self.host.set_hexpand(True); self.host.set_vexpand(True)
         self.body.append(self.host)
         self.status=label(''); self.status.set_visible(False)
-        self.document_info=identity_chip(BarChip(self.design.name,meta='3840 × 2160',presentation='identity'))
-        copy=self.document_info.get_last_child()
-        self.document_name=copy.get_first_child(); self.document_detail=copy.get_last_child()
-        self.document_name.set_max_width_chars(14); self.document_detail.set_max_width_chars(18)
         self.action_center=ActionCenter().attach(self.host,over='frame',inset='tight')
         self.action_center.bar.update_property([Gtk.AccessibleProperty.LABEL],['Wallpaper studio'])
         # The panel is a short, scrollable editing surface. Leave a live preview above it.
         self.action_center.panel.set_max_content_height(260)
         self.action_center.connect('panel-changed',self.panel_changed)
-        self.action_center.show_bar([BarWidget(self.document_info),
-            BarAction('monitor','Size',tooltip='Wallpaper size',panel=lambda:self.make_panel('size'),key='size'),
+        self.action_center.show_bar([
+            BarAction('monitor','3,840 × 2,160',tooltip='Adjust wallpaper size',keep_label=True,
+                      panel=lambda:self.make_panel('size'),key='size'),
             BarAction('ellipsis',tooltip='More actions',menu=self.more_menu,key='more'),
             BarAction('download','Export',tooltip='Export wallpaper',primary=True,on_activate=self.show_export),
         ])
@@ -176,7 +206,10 @@ class Window(AppWindow):
 
     def panel_changed(self,center,key):
         self.panel_key=key or None
-        self.action_center.panel.set_max_content_height(120 if self.short else 220 if self.compact else 260)
+        arranging=key=='monitors'
+        self.creation.set_visible(not arranging)
+        self.canvas_stack.set_visible_child_name('monitors' if arranging else 'wallpaper')
+        self.action_center.panel.set_max_content_height(120 if self.short else 220 if self.compact else 280 if arranging else 260)
         if self.compact and key: self.creation.set_folded(True)
         self.update_preview_space()
 
@@ -196,8 +229,8 @@ class Window(AppWindow):
         # Reserve app-content space using the same CR1 metrics as Canvas/Write.
         # The native workspace owns all chrome allocation and bar clearance.
         if not hasattr(self,'workspace'): return
-        opened=self.compact and not self.creation.get_folded()
-        width=CREATIVE['panel_left_width']+2*CREATIVE['panel_inset']
+        opened=self.compact and self.panel_key!='monitors' and not self.creation.get_folded()
+        width=0 if self.panel_key=='monitors' else CREATIVE['panel_left_width']+2*CREATIVE['panel_inset']
         rtl=self.preview_host.get_direction()==Gtk.TextDirection.RTL
         self.preview_host.set_margin_start(0 if self.compact or rtl else width)
         self.preview_host.set_margin_end(width if not self.compact and rtl else 0)
@@ -206,17 +239,17 @@ class Window(AppWindow):
             _,natural,*_=self.creation.measure(Gtk.Orientation.VERTICAL,max(1,self.workspace.get_width()))
             cap=min(natural,(height if height is not None else self.workspace.get_height())*CREATIVE['panel_phone_max_height_pct']//100)
         output_space=CREATIVE['panel_reserve']
-        if self.panel_key and hasattr(self,'action_center'):
-            _,bar_height,*_=self.action_center.bar.measure(Gtk.Orientation.VERTICAL,max(1,self.action_center.bar.get_width() or self.workspace.get_width()))
-            output_space=bar_height+CREATIVE['tools_bottom']+2*CREATIVE['panel_inset']
+        # Arrangement is a separate canvas mode: keep the screens above their controls.
+        # Size/export overlays never change the wallpaper's fit rectangle.
+        if self.panel_key=='monitors':
             ok,bounds=self.action_center.panel.compute_bounds(self.preview_viewport)
             if ok and bounds.get_height()>0:
-                output_space=max(0,round((height if height is not None else self.preview_viewport.get_height())-bounds.get_y()))+CREATIVE['panel_inset']
-        top=12 if opened or not self.compact else 64
+                output_space=max(output_space,round((height if height is not None else self.preview_viewport.get_height())-bounds.get_y())+CREATIVE['panel_inset'])
+        top=12 if opened or not self.compact or self.panel_key=='monitors' else 64
         available=height if height is not None else self.preview_viewport.get_height()
         # Keep a 64px live image while native overlay geometry settles on resize.
         bottom=min(max(cap,output_space),max(0,available-top-64)) if available else max(cap,output_space)
-        self.picture.set_margin_bottom(bottom); self.picture.set_margin_top(top)
+        self.canvas_stack.set_margin_bottom(bottom); self.canvas_stack.set_margin_top(top)
         if hasattr(self,'action_center'): self.action_center.set_visible(not opened)
 
     def show_editor(self,show):
@@ -292,24 +325,30 @@ class Window(AppWindow):
 
     def colors_panel(self):
         panel=box(0)
-        choices=[(name,name) for name in PALETTES]
-        if self.design.palette=='Custom': choices.append(('Custom','Custom'))
-        picker=PropertyChoice('Palette',choices,current=self.design.palette,on_change=self.choose_palette)
-        self.palette_picker=picker
-        panel.append(PropertySection('Palette',picker,self.palette_strip(self.design.colors)))
+        grid=Gtk.Grid(column_spacing=8,row_spacing=8,column_homogeneous=True)
+        self.palette_tiles={}
+        choices=dict(PALETTES)
+        if self.design.palette=='Custom': choices['Custom']=self.design.colors
+        for i,(name,colors) in enumerate(choices.items()):
+            tile=MediaTile(kind='clip',title=name,caption=name,selected=self.design.palette==name,
+                           on_activate=lambda name=name:self.choose_palette(name))
+            tile.set_hexpand(True)
+            tile.set_picture(self.palette_strip(colors,160,90).get_paintable())
+            grid.attach(tile,i%2,i//2,1,1); self.palette_tiles[name]=tile
+        panel.append(PropertySection('Palette',grid))
         actions=box(6)
         actions.append(TextButton('Edit colors',icon='palette',style='fill',small=True,on_click=self.edit_colors))
         actions.append(TextButton('Reverse colors',icon='arrow-left-right',style='fill',small=True,on_click=self.reverse_palette))
         panel.append(PropertySection('Colors',actions))
         return panel
 
-    def palette_strip(self,colors):
+    def palette_strip(self,colors,width=96,height=24):
         import numpy as np
         rgb=np.array([[int(c[i:i+2],16) for i in (1,3,5)] for c in colors],dtype=np.uint8)
-        arr=np.repeat(np.repeat(rgb[None,:,:],max(1,96//len(colors)),axis=1),24,axis=0)
+        arr=np.repeat(rgb[(np.arange(width)*len(colors)//width)][None,:,:],height,axis=0)
         w=arr.shape[1]
-        thumb=Gtk.Picture(can_shrink=True,content_fit=Gtk.ContentFit.FILL,width_request=96,height_request=24)
-        thumb.set_paintable(Gdk.MemoryTexture.new(w,24,Gdk.MemoryFormat.R8G8B8,GLib.Bytes.new(arr.tobytes()),w*3))
+        thumb=Gtk.Picture(can_shrink=True,content_fit=Gtk.ContentFit.FILL,width_request=width,height_request=height)
+        thumb.set_paintable(Gdk.MemoryTexture.new(w,height,Gdk.MemoryFormat.R8G8B8,GLib.Bytes.new(arr.tobytes()),w*3))
         return thumb
 
     def choose_palette(self,name):
@@ -357,13 +396,15 @@ class Window(AppWindow):
         picker=PropertyChoice('Screen preset',[(name,f'{name} · {w:,} × {h:,}') for name,(w,h) in PRESETS.items()]+[('custom','Custom size')],
             current=selected,on_change=lambda key:self.set_canvas(*PRESETS[key]) if key in PRESETS else None)
         panel.append(PropertySection('Wallpaper size',picker))
-        self.canvas_width=TextField('Width in pixels',value=str(self.width),purpose='number',
+        self.canvas_width=TextField('Width',value=str(self.width),purpose='number',
             on_activate=lambda *_:self.apply_dimensions())
-        self.canvas_height=TextField('Height in pixels',value=str(self.height),purpose='number',
+        self.canvas_height=TextField('Height',value=str(self.height),purpose='number',
             on_activate=lambda *_:self.apply_dimensions())
         for field in (self.canvas_width,self.canvas_height):
             field.entry.set_width_chars(5); field.entry.set_max_width_chars(5)
-        panel.append(PropertySection('Exact dimensions',self.canvas_width,self.canvas_height))
+        line=Gtk.Box(spacing=12,homogeneous=True)
+        for field in (self.canvas_width,self.canvas_height): field.set_hexpand(True); line.append(field)
+        panel.append(PropertySection('Exact dimensions',line))
         actions=box(6)
         for title,icon,callback in [('Apply dimensions','check',self.apply_dimensions),('Rotate size','rotate-cw',lambda:self.set_canvas(self.height,self.width)),
                                     ('Arrange displays','monitor',self.show_monitors)]:
@@ -410,9 +451,20 @@ class Window(AppWindow):
         panel.append(TextButton('Done',icon='check',small=True,style='fill',on_click=self.action_center.fold_panel))
         self.action_center.grow('rename',panel)
 
+    def set_zoom(self,value):
+        self.zoom_preview.zoom=max(.25,min(8.,value)); self.zoom_preview.queue_draw()
+        if self.panel_key=='monitors': self.monitor_canvas.queue_draw()
+
+    def zoom_by(self,direction): self.set_zoom(self.zoom_preview.zoom*(1.25**direction))
+
+    def scroll_zoom(self,controller,dx,dy):
+        if not controller.get_current_event_state() & Gdk.ModifierType.CONTROL_MASK: return False
+        if dy: self.zoom_by(-1 if dy>0 else 1)
+        return True
+
     def position_begin(self,gesture,x,y):
         w,h=self.picture.get_width(),self.picture.get_height()
-        scale=min(w/self.width,h/self.height)
+        scale=min(w/self.width,h/self.height)*self.zoom_preview.zoom
         image_w,image_h=self.width*scale,self.height*scale
         left,top=(w-image_w)/2,(h-image_h)/2
         self.drag_origin=None
@@ -530,9 +582,11 @@ class Window(AppWindow):
     def queue_preview(self):
         if self.closed: return
         self.revision+=1
-        self.document_name.set_label(self.design.name or 'Untitled')
-        self.document_detail.set_label(f'{self.width:,} × {self.height:,} · {self.design.effect}')
-        self.document_info.update_property([Gtk.AccessibleProperty.LABEL],[f'{self.design.name}, {self.width} × {self.height}, {self.design.effect}'])
+        button=self.bar_anchor('size')
+        resolution=f'{self.width:,} × {self.height:,}'
+        button.bar_words.set_label(resolution); button.bar_item.label=resolution
+        button.set_tooltip_text(f'{resolution} — adjust wallpaper size')
+        button.update_property([Gtk.AccessibleProperty.LABEL],[f'{resolution}, adjust wallpaper size'])
         if self.panel_key=='monitors': self.monitor_canvas.queue_draw()
         if not self.preview_timer: self.preview_timer=GLib.timeout_add(16,self.start_preview)
     def start_preview(self):
@@ -718,8 +772,13 @@ class Window(AppWindow):
 
     def show_monitors(self):
         self.thumbnail_epoch+=1; self.thumbnail_jobs=[]
-        panel=self.panel_header('Arrange displays','Drag displays into place, or enter their exact positions.')
-        canvas=Gtk.DrawingArea(content_height=150); panel.append(canvas)
+        panel=self.panel_header('Arrange displays','Drag the screens on the canvas. Match their sizes and positions to your desk.')
+        previous=self.canvas_stack.get_child_by_name('monitors')
+        if previous: self.canvas_stack.remove(previous)
+        canvas=Gtk.DrawingArea(hexpand=True,vexpand=True)
+        self.canvas_stack.add_named(canvas,'monitors')
+        scroll=Gtk.EventControllerScroll.new(Gtk.EventControllerScrollFlags.VERTICAL)
+        scroll.connect('scroll',self.scroll_zoom); canvas.add_controller(scroll)
         canvas.update_property([Gtk.AccessibleProperty.LABEL],['Monitor arrangement preview. Exact positions can be edited below.'])
         rows=box(16); panel.append(rows); drawing={}; fields={}; dragging={}
         self.monitor_canvas=canvas; self.monitor_fields=fields
@@ -741,12 +800,13 @@ class Window(AppWindow):
         def draw(area,cr,w,h):
             try: x,y,bw,bh=bounds(self.monitors)
             except ValueError: return
-            scale=min(max(1,w-32)/bw,max(1,h-32)/bh)
+            scale=min(max(1,w-32)/bw,max(1,h-32)/bh)*self.zoom_preview.zoom
             pw,ph=max(1,round(bw*scale)),max(1,round(bh*scale))
             size=(pw,ph,self.revision)
             if render_size[0]!=size:
                 render_size[0]=size
-                self.load_thumbnails([(image_ready,Design.from_dict(self.design.to_dict()),pw,ph)])
+                fit=min(1,860/pw,540/ph)
+                self.load_thumbnails([(image_ready,Design.from_dict(self.design.to_dict()),max(1,round(pw*fit)),max(1,round(ph*fit)))])
             left=(w-pw)/2; top=(h-ph)/2
             drawing.update(x=x,y=y,scale=scale,left=left,top=top)
             for i,m in enumerate(self.monitors):
@@ -774,7 +834,7 @@ class Window(AppWindow):
                 if len(self.monitors)>1:
                     header.append(self.icon('list-remove-symbolic','Remove display',lambda monitor=m:(self.monitors.remove(monitor),rebuild(),canvas.queue_draw(),self.write_draft())))
                 group.append(header)
-                for pair in ((('width','W',1),('height','H',1)),(('x','X',-32000),('y','Y',-32000))):
+                for pair in ((('width','Width',1),('height','Height',1)),(('x','Left',-32000),('y','Top',-32000))):
                     line=Gtk.Box(spacing=12)
                     for key,title,lo in pair:
                         number=PropertyNumber(title,getattr(m,key),unit='px',minimum=lo,maximum=32000)
@@ -784,7 +844,7 @@ class Window(AppWindow):
                     group.append(line)
                 rows.append(group)
             describe(); canvas.queue_draw()
-        drag=Gtk.GestureDrag()
+        drag=Gtk.GestureDrag(); self.monitor_drag=drag
         def begin(_,px,py):
             dragging.clear()
             if not drawing: return
@@ -811,7 +871,7 @@ class Window(AppWindow):
             if len(self.monitors)<8:
                 x=max(m.x+m.width for m in self.monitors); self.monitors.append(Monitor(x=x)); rebuild(); self.write_draft()
         panel.append(TextButton('Add display',icon='plus',style='fill',small=True,on_click=add))
-        panel.append(label('Pixel-based alignment. Adjust gaps manually for bezels or mixed display sizes.'))
+        panel.append(label('Screens snap to edges as you drag. Left and Top set exact positions; negative values place a screen left of or above the first.'))
         def layout_snapshot():
             layout=[replace(m) for m in self.monitors]; return layout,bounds(layout)
         def apply():

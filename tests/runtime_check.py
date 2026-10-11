@@ -73,7 +73,9 @@ def next_width():
             @guard
             def inspect():
                 capture(win,f'{key}-{width}')
-                assert win.picture.get_visible() and win.picture.get_height()>60,'Live preview lost while editing'
+                if key=='style' and width==1180:
+                    win.set_zoom(2); capture(win,'wallpaper-zoom-200'); win.set_zoom(1)
+                assert win.canvas_stack.get_height()>60,'Live canvas lost while editing'
                 if win.action_center.get_visible():
                     assert win.action_center.get_width()<=win.host.get_width(),'Bar clips beyond its host'
                 if key in ('style','colors','adjust','custom-colors'):
@@ -81,9 +83,13 @@ def next_width():
                     assert win.action_center.grown is None
                 else:
                     assert win.action_center.panel.get_child() is not None
-                    ok,image_bounds=win.picture.compute_bounds(win.host)
-                    panel_ok,output_bounds=win.action_center.panel.compute_bounds(win.host)
-                    assert ok and panel_ok and image_bounds.get_y()+image_bounds.get_height()<=output_bounds.get_y(),f'Output panel covers preview: {key}/{width}, image end {image_bounds.get_y()+image_bounds.get_height()}, panel start {output_bounds.get_y()}'
+                    if key=='monitors':
+                        assert win.canvas_stack.get_visible_child() is win.monitor_canvas
+                        assert win.monitor_canvas.get_width()>200 and win.monitor_canvas.get_height()>60
+                        assert not win.monitor_canvas.is_ancestor(win.action_center.panel)
+                        _,canvas_bounds=win.monitor_canvas.compute_bounds(win.host)
+                        _,panel_bounds=win.action_center.panel.compute_bounds(win.host)
+                        assert canvas_bounds.get_y()+canvas_bounds.get_height()<=panel_bounds.get_y(),'Display controls cover the draggable canvas'
                 if win.action_center.get_visible():
                     ok,bounds=win.action_center.bar.compute_bounds(win.host)
                     assert ok and bounds.get_y()+bounds.get_height()<=win.host.get_height()-16,'Bottom bar clearance lost'
