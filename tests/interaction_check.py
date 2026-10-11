@@ -182,6 +182,11 @@ def monitors():
     win=app.get_active_window()
     panel_row(win,'Add display').emit('clicked')
     assert len(win.monitors)==2
+    first=win.monitors[0]
+    for key,value in (('width',3840),('height',2160)):
+        field=win.monitor_fields[(id(first),key)]
+        field.entry.set_text(str(value)); field.entry.emit('activate')
+        assert getattr(first,key)==value
     second=win.monitors[1]
     for key,value in (('width',1920),('height',1080),('x',-1920),('y',120)):
         field=win.monitor_fields[(id(second),key)]
