@@ -83,7 +83,7 @@ def next_width():
                     assert win.action_center.panel.get_child() is not None
                     ok,image_bounds=win.picture.compute_bounds(win.host)
                     panel_ok,output_bounds=win.action_center.panel.compute_bounds(win.host)
-                    assert ok and panel_ok and image_bounds.get_y()+image_bounds.get_height()<=output_bounds.get_y(),'Output panel covers wallpaper preview'
+                    assert ok and panel_ok and image_bounds.get_y()+image_bounds.get_height()<=output_bounds.get_y(),f'Output panel covers preview: {key}/{width}, image end {image_bounds.get_y()+image_bounds.get_height()}, panel start {output_bounds.get_y()}'
                 if win.action_center.get_visible():
                     ok,bounds=win.action_center.bar.compute_bounds(win.host)
                     assert ok and bounds.get_y()+bounds.get_height()<=win.host.get_height()-16,'Bottom bar clearance lost'

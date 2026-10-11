@@ -193,7 +193,7 @@ class Window(AppWindow):
             cap=min(natural,(height if height is not None else self.workspace.get_height())*CREATIVE['panel_phone_max_height_pct']//100)
         output_space=CREATIVE['panel_reserve']
         if self.panel_key and hasattr(self,'action_center'):
-            _,bar_height,*_=self.action_center.bar.measure(Gtk.Orientation.VERTICAL,max(1,self.workspace.get_width()))
+            _,bar_height,*_=self.action_center.bar.measure(Gtk.Orientation.VERTICAL,max(1,self.action_center.bar.get_width() or self.workspace.get_width()))
             output_space=bar_height+CREATIVE['tools_bottom']+2*CREATIVE['panel_inset']
         self.picture.set_margin_bottom(max(cap,output_space))
         self.picture.set_margin_top(12 if opened or not self.compact else 64)
