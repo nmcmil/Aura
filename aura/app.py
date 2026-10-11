@@ -117,7 +117,8 @@ class Window(AppWindow):
             closable=False,on_page=self.creation_page_changed,
             on_folded=lambda *_:self.update_preview_space())
         self.creation.set_holds('inspector')
-        self.preview_viewport=PreviewViewport(self.preview_host,lambda w,h:self.update_preview_space(h))
+        self.space_pending=False
+        self.preview_viewport=PreviewViewport(self.preview_host,self.preview_allocated)
         self.workspace=CreativeWorkspace(self.preview_viewport,left=self.creation,grid=False)
         self.workspace.set_hexpand(True); self.workspace.set_vexpand(True)
         self.host=ToastHost(self.workspace); self.host.set_hexpand(True); self.host.set_vexpand(True)
@@ -178,6 +179,18 @@ class Window(AppWindow):
         if self.compact and key: self.creation.set_folded(True)
         self.update_preview_space()
 
+    def preview_allocated(self,width,height):
+        self.update_preview_space(height)
+        # Coalesce a geometry refresh after native workspace/overlay allocation.
+        # Like ActionCenter's safe-area refresh, this runs only on allocation.
+        if not self.space_pending:
+            self.space_pending=True; GLib.idle_add(self.refresh_preview_space)
+
+    def refresh_preview_space(self):
+        self.space_pending=False
+        if not self.closed: self.update_preview_space()
+        return False
+
     def update_preview_space(self,height=None):
         # Reserve app-content space using the same CR1 metrics as Canvas/Write.
         # The native workspace owns all chrome allocation and bar clearance.
@@ -195,6 +208,9 @@ class Window(AppWindow):
         if self.panel_key and hasattr(self,'action_center'):
             _,bar_height,*_=self.action_center.bar.measure(Gtk.Orientation.VERTICAL,max(1,self.action_center.bar.get_width() or self.workspace.get_width()))
             output_space=bar_height+CREATIVE['tools_bottom']+2*CREATIVE['panel_inset']
+            ok,bounds=self.action_center.panel.compute_bounds(self.preview_viewport)
+            if ok and bounds.get_height()>0:
+                output_space=max(0,round((height if height is not None else self.preview_viewport.get_height())-bounds.get_y()))+CREATIVE['panel_inset']
         self.picture.set_margin_bottom(max(cap,output_space))
         self.picture.set_margin_top(12 if opened or not self.compact else 64)
         if hasattr(self,'action_center'): self.action_center.set_visible(not opened)
