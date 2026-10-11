@@ -86,7 +86,13 @@ def colors():
     report['palette_custom_color_reverse_undo']='passed'
     capture(win,'custom-colors')
     win.action_center.fold_panel(); win.open_panel('adjust')
-    win.set_canvas(5120,1440)
+    win.open_panel('size')
+    win.canvas_width.entry.set_text('2560 * 2'); win.canvas_height.entry.set_text('1440')
+    panel_row(win,'Apply dimensions').emit('clicked')
+    assert (win.width,win.height)==(5120,1440)
+    win.open_panel('adjust')
+    assert win.creation.get_visible() and win.action_center.grown is None
+    report['sidebar_and_custom_dimensions']='passed'
     win.numeric_change('angle',45); assert win.design.angle==45
     win.numeric_change('angle',0); assert win.controls['angle'].value==0
     win.save(); saved_id=win.design_id; saved_count=len(win.library.designs())

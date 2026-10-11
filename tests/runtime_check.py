@@ -49,7 +49,8 @@ def next_width():
         assert win.get_width()==width, f'Requested usable width {width}, got {win.get_width()}'
         assert win.picture.get_paintable() is not None
         assert win.compact==(width<=500)
-        panels=iter(['style','colors','adjust','size','custom-colors','batch','monitors','export'])
+        assert win.workspace.get_orientation()==(Gtk.Orientation.VERTICAL if win.compact else Gtk.Orientation.HORIZONTAL)
+        panels=iter(['style','colors','adjust','size','size-presets','custom-colors','batch','monitors','export'])
         record={'requested_width':width,'actual_width':win.get_width(),'preview':True,'panels':[]}
         report.append(record)
         @guard
@@ -58,7 +59,8 @@ def next_width():
             try: key=next(panels)
             except StopIteration:
                 GLib.timeout_add(200,next_width); return False
-            if key=='custom-colors': win.edit_colors()
+            if key=='size-presets': win.show_size_presets()
+            elif key=='custom-colors': win.edit_colors()
             elif key=='batch': win.show_batch()
             elif key=='monitors': win.show_monitors()
             elif key=='export': win.show_export()
@@ -68,7 +70,10 @@ def next_width():
                 capture(win,f'{key}-{width}')
                 assert win.picture.get_visible() and win.picture.get_height()>60,'Live preview lost while editing'
                 assert win.action_center.get_width()<=win.host.get_width(),'Bar clips beyond its host'
-                assert win.action_center.panel.get_child() is not None
+                if key in ('style','colors','adjust','custom-colors'):
+                    assert win.creation.get_visible() and win.creation_scroll.get_child() is not None
+                    assert win.action_center.grown is None
+                else: assert win.action_center.panel.get_child() is not None
                 record['panels'].append({'name':key,'preview_height':win.picture.get_height(),'bar_width':win.action_center.get_width()})
                 GLib.timeout_add(80,next_panel); return False
             GLib.timeout_add(550,inspect); return False
@@ -83,7 +88,7 @@ def short_window():
     @guard
     def check_short():
         capture(win,'adjust-360-short')
-        assert win.short and win.picture.get_height()>60
+        assert win.short and win.compact and win.get_width()==360 and win.picture.get_height()>60
         assert win.action_center.get_width()<=win.host.get_width()
         report.append({'width':win.get_width(),'height':win.get_height(),'preview_height':win.picture.get_height(),'short':True})
         (out/'runtime.json').write_text(json.dumps(report,indent=2)); print(json.dumps(report),flush=True)
