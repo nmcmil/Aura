@@ -164,6 +164,7 @@ class Window(AppWindow):
         self.surface.append(self.host); self.body.append(self.surface)
         self.status=label(''); self.status.set_visible(False)
         self.action_center=ActionCenter().attach(self.host,over='frame',inset='tight')
+        self.action_center.bar_row.set_halign(Gtk.Align.CENTER)
         self.action_center.bar.update_property([Gtk.AccessibleProperty.LABEL],['Wallpaper studio'])
         # The panel is a short, scrollable editing surface. Leave a live preview above it.
         self.action_center.panel.set_max_content_height(260)
@@ -398,15 +399,12 @@ class Window(AppWindow):
         picker=PropertyChoice('Screen preset',[(name,f'{name} · {w:,} × {h:,}') for name,(w,h) in PRESETS.items()]+[('custom','Custom size')],
             current=selected,on_change=lambda key:self.set_canvas(*PRESETS[key]) if key in PRESETS else None)
         panel.append(PropertySection('Wallpaper size',picker))
-        self.canvas_width=TextField('Width',value=str(self.width),purpose='number',
-            on_activate=lambda *_:self.apply_dimensions())
-        self.canvas_height=TextField('Height',value=str(self.height),purpose='number',
-            on_activate=lambda *_:self.apply_dimensions())
+        self.canvas_width=PropertyNumber('Width',self.width,step=1)
+        self.canvas_height=PropertyNumber('Height',self.height,step=1)
         for field in (self.canvas_width,self.canvas_height):
-            field.entry.set_width_chars(5); field.entry.set_max_width_chars(5)
-        line=Gtk.Box(spacing=12,homogeneous=True)
-        for field in (self.canvas_width,self.canvas_height): field.set_hexpand(True); line.append(field)
-        panel.append(PropertySection('Exact dimensions',line))
+            text=field.get_last_child()
+            text.connect('activate',lambda *_:self.apply_dimensions())
+        panel.append(PropertySection('Exact dimensions',(self.canvas_width,self.canvas_height)))
         actions=box(6)
         for title,icon,callback in [('Apply dimensions','check',self.apply_dimensions),('Rotate size','rotate-cw',lambda:self.set_canvas(self.height,self.width)),
                                     ('Arrange displays','monitor',self.show_monitors)]:
@@ -417,8 +415,8 @@ class Window(AppWindow):
         self.action_center.grow('size-presets',self.make_canvas_controls())
 
     def apply_dimensions(self):
-        width=evaluate_number(self.canvas_width.entry.get_text())
-        height=evaluate_number(self.canvas_height.entry.get_text())
+        width=self.canvas_width.get_value()
+        height=self.canvas_height.get_value()
         if width is None or height is None:
             self.error('Enter a width and height in pixels.'); return
         self.set_canvas(round(width),round(height))
@@ -430,7 +428,7 @@ class Window(AppWindow):
 
     def sync_canvas(self):
         if not hasattr(self,'canvas_width'): return
-        self.canvas_width.entry.set_text(str(self.width)); self.canvas_height.entry.set_text(str(self.height))
+        self.canvas_width.set_value(self.width); self.canvas_height.set_value(self.height)
 
     def more_menu(self):
         rows=[]

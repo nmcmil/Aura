@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 import zlib
 import numpy as np
-from aura.model import Design, EFFECTS, Monitor, bounds, dimensions
+from aura.model import Design, EFFECTS, PRESETS, Monitor, bounds, dimensions
 from aura.render import pixels, export_png, Cancelled
 from aura.store import Library
 
@@ -68,6 +68,8 @@ class EngineTests(unittest.TestCase):
         for change in [dict(softness=float('nan')),dict(seed=-1),dict(colors=['oops']),dict(version=2)]:
             with self.assertRaises(ValueError): Design(**change).validate()
         self.assertEqual(dimensions(16000,16000),(16000,16000))
+        for preset in PRESETS.values():
+            self.assertEqual(dimensions(*preset),preset)
 
     def test_rename_preserves_existing_library_draft_and_history(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'XDG_DATA_HOME': tmp}):

@@ -76,6 +76,12 @@ def next_width():
                 assert win.canvas_stack.get_height()>60,'Live canvas lost while editing'
                 if win.action_center.get_visible():
                     assert win.action_center.get_width()<=win.host.get_width(),'Bar clips beyond its host'
+                if win.action_center.get_visible():
+                    _,row_bounds=win.action_center.bar_row.compute_bounds(win.action_center.bar)
+                    assert abs(row_bounds.get_x()+row_bounds.get_width()/2-win.action_center.bar.get_width()/2)<=1, 'Action controls must stay centered'
+                if key in ('size','size-presets'):
+                    assert win.canvas_width.__gtype__.name=='LumaPropertyNumber'
+                    assert abs(win.canvas_width.get_width()-win.canvas_height.get_width())<=1
                 if key=='adjust':
                     sections=[win.controls[name].get_parent() for name in ('angle','center_x','grain')]
                     assert len(set(sections))==3

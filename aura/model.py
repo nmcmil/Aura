@@ -14,7 +14,9 @@ PALETTES = {
     'Porcelain': ['#657ba8', '#a9bbd2', '#e8edef', '#dcc5dc', '#bd83b0'],
 }
 EFFECTS = ('Glow', 'Halo', 'Horizon', 'Mesh', 'Stripes', 'Fluted', 'Waves')
-PRESETS = {'Desktop · 4K': (3840, 2160), 'Ultrawide · 49 inch': (5120, 1440),
+PRESETS = {'Desktop · Full HD': (1920, 1080), 'Desktop · QHD': (2560, 1440),
+           'Desktop · DCI 2K': (2048, 1080), 'Desktop · 4K': (3840, 2160),
+           'Desktop · 8K': (7680, 4320), 'Ultrawide · 49 inch': (5120, 1440),
            'Ultrawide · dual 4K': (7680, 2160), 'Phone · portrait': (1290, 2796),
            'Tablet': (2048, 2732), 'Square · 16K': (16000, 16000)}
 

@@ -107,7 +107,9 @@ def colors():
     capture(win,'custom-colors')
     win.action_center.fold_panel(); win.open_panel('adjust')
     win.open_panel('size')
-    win.canvas_width.entry.set_text('2560 * 2'); win.canvas_height.entry.set_text('1440')
+    win.canvas_height.set_value(1440)
+    width_text=win.canvas_width.get_last_child()
+    width_text.set_text('2560 * 2'); width_text.emit('activate')
     win.apply_dimensions()
     assert (win.width,win.height)==(5120,1440)
     win.open_panel('adjust')
@@ -236,7 +238,7 @@ def zoom():
     win=app.get_active_window()
     assert (win.picture.get_width(),win.picture.get_height())==win.before_size,'Size resized the wallpaper'
     assert abs(win.canvas_width.get_width()-win.canvas_height.get_width())<=1
-    assert win.canvas_width.label.get_text()=='Width'
+    assert win.canvas_width.get_first_child().get_text()=='Width'
     before=win.design.to_dict(); dimensions=(win.width,win.height); revision=win.revision
     app.activate_action('view-zoom-in',None); assert win.zoom_preview.zoom==1.25
     capture(win,'wallpaper-zoom-125')
