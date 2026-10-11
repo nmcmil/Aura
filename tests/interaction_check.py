@@ -7,7 +7,7 @@ import time
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from aura.app import Application
 from aura.model import EFFECTS, PALETTES, Design
-from gi.repository import GLib, Gtk, Adw, Gdk
+from gi.repository import GLib, Gtk, Adw, Gdk, Gio
 
 out=Path(os.environ.get('AURA_EVIDENCE','/tmp/aura-interactions')); out.mkdir(parents=True,exist_ok=True)
 app=Application(); app.set_application_id('io.github.nmcmil.Aura.InteractionVerification')
@@ -203,22 +203,25 @@ def monitors():
 def history():
     win=app.get_active_window(); capture(win,'export-history')
     win.action_center.fold_panel()
-    Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_DARK)
+    Gio.Settings.new('org.project_luma.shell-state').set_string('surface-treatment','dark')
     later(dark)
 
 
 @guard
 def dark():
-    win=app.get_active_window(); capture(win,'dark')
-    Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_LIGHT)
+    win=app.get_active_window(); assert Adw.StyleManager.get_default().get_dark()
+    capture(win,'dark')
+    Gio.Settings.new('org.project_luma.shell-state').set_string('surface-treatment','light')
     later(light)
 
 
 @guard
 def light():
-    win=app.get_active_window(); capture(win,'light')
+    win=app.get_active_window(); assert not Adw.StyleManager.get_default().get_dark()
+    capture(win,'light')
     settings=Gtk.Settings.get_default(); settings.set_property('gtk-enable-animations',False)
     settings.set_property('gtk-xft-dpi',int(96*1024*1.25))
+    Gtk.Widget.set_default_direction(Gtk.TextDirection.RTL)
     win.set_direction(Gtk.TextDirection.RTL)
     win.open_panel('adjust'); later(rtl)
 
@@ -226,6 +229,7 @@ def light():
 @guard
 def rtl():
     win=app.get_active_window(); capture(win,'rtl-large-text')
+    assert win.action_center.bar.get_direction()==Gtk.TextDirection.RTL
     # Native range keyboard controller: arrows change the value; Esc folds the bar.
     slider=win.controls['angle']; old=slider.value
     controllers=slider.range.observe_controllers()
