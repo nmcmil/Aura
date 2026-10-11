@@ -10,7 +10,7 @@ from gi.repository import Gtk, GLib
 out=Path(os.environ.get('AURA_EVIDENCE','/tmp/aura-evidence')); out.mkdir(parents=True,exist_ok=True)
 app=Application(); app.set_application_id('io.github.nmcmil.Aura.Verification')
 report=[]; errors=[]
-widths=iter([1180,1024,500,360])
+widths=iter([1880,1180,1024,500,360])
 
 
 def capture(win,name):
@@ -49,7 +49,8 @@ def next_width():
         assert win.get_width()==width, f'Requested usable width {width}, got {win.get_width()}'
         assert win.picture.get_paintable() is not None
         assert win.compact==(width<=500)
-        assert win.workspace.get_orientation()==(Gtk.Orientation.VERTICAL if win.compact else Gtk.Orientation.HORIZONTAL)
+        assert win.workspace.__gtype__.name=='LumaCreativeWorkspace'
+        assert win.creation.__gtype__.name=='LumaFloatingPanel'
         panels=iter(['style','colors','adjust','size','size-presets','custom-colors','batch','monitors','export'])
         record={'requested_width':width,'actual_width':win.get_width(),'preview':True,'panels':[]}
         report.append(record)
@@ -69,11 +70,22 @@ def next_width():
             def inspect():
                 capture(win,f'{key}-{width}')
                 assert win.picture.get_visible() and win.picture.get_height()>60,'Live preview lost while editing'
-                assert win.action_center.get_width()<=win.host.get_width(),'Bar clips beyond its host'
+                if win.action_center.get_visible():
+                    assert win.action_center.get_width()<=win.host.get_width(),'Bar clips beyond its host'
                 if key in ('style','colors','adjust','custom-colors'):
-                    assert win.creation.get_visible() and win.creation_scroll.get_child() is not None
+                    assert win.creation.get_visible() and win.creation_pages[win.creation.get_page()].get_first_child() is not None
                     assert win.action_center.grown is None
                 else: assert win.action_center.panel.get_child() is not None
+                if win.action_center.get_visible():
+                    ok,bounds=win.action_center.bar.compute_bounds(win.host)
+                    assert ok and bounds.get_y()+bounds.get_height()<=win.host.get_height()-16,'Bottom bar clearance lost'
+                if win.compact and win.creation.get_folded() and win.document_title.get_visible():
+                    ok,panel_bounds=win.creation.compute_bounds(win.host)
+                    title_ok,title_bounds=win.document_title.compute_bounds(win.host)
+                    assert ok and title_ok and title_bounds.get_y()>=panel_bounds.get_y()+panel_bounds.get_height(),'Document title overlaps folded creation header'
+                if not win.compact:
+                    from luma_appkit.lumaui_tokens import CREATIVE
+                    assert win.creation.get_width()<=CREATIVE['panel_left_width']+2*CREATIVE['panel_inset']
                 record['panels'].append({'name':key,'preview_height':win.picture.get_height(),'bar_width':win.action_center.get_width()})
                 GLib.timeout_add(80,next_panel); return False
             GLib.timeout_add(550,inspect); return False
@@ -89,7 +101,7 @@ def short_window():
     def check_short():
         capture(win,'adjust-360-short')
         assert win.short and win.compact and win.get_width()==360 and win.picture.get_height()>60
-        assert win.action_center.get_width()<=win.host.get_width()
+        if win.action_center.get_visible(): assert win.action_center.get_width()<=win.host.get_width()
         report.append({'width':win.get_width(),'height':win.get_height(),'preview_height':win.picture.get_height(),'short':True})
         (out/'runtime.json').write_text(json.dumps(report,indent=2)); print(json.dumps(report),flush=True)
         app.quit(); return False

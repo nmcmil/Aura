@@ -12,11 +12,12 @@ from gi.repository import Gtk, Adw, Gdk, Gio, GLib, LumaUI, Pango
 from luma_appkit import (AppWindow, Island, Command, CommandGroup, CommandRegistry, install_appkit,
                          NumericField, ColorSwatch, IconButton, ActionCenter, BarAction,
                          PanelRow, PanelHeading, PanelField, ModeSwitch, ValueSlider,
-                         TitleIsland, ToastHost, Toast, MediaTile, TextField, evaluate_number, apply_type)
+                         TitleIsland, ToastHost, Toast, MediaTile, TextField, FloatingPanel, CreativeWorkspace, evaluate_number, apply_type)
 from .model import Design, Monitor, PALETTES, EFFECTS, PRESETS, bounds, dimensions
 from .render import pixels, export_png, Cancelled
 from .store import Library
 from .studio import STYLE_NOTES, ADJUSTMENTS, adjustment_visible
+from luma_appkit.lumaui_tokens import CREATIVE
 
 APP_ID='io.github.nmcmil.Aura'
 
@@ -25,6 +26,26 @@ def box(spacing=12): return Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing
 def padded(widget, margin=16):
     for side in ('top','bottom','start','end'): getattr(widget,'set_margin_'+side)(margin)
     return widget
+
+class PreviewViewport(Gtk.Widget):
+    """Write's content viewport pattern: allocate app pixels at available size."""
+    def __init__(self,child,on_allocate):
+        super().__init__(hexpand=True,vexpand=True)
+        self.child=child; child.set_parent(self); self.on_allocate=on_allocate
+
+    def do_measure(self,orientation,for_size): return 1,1,-1,-1
+
+    def do_size_allocate(self,width,height,baseline):
+        self.on_allocate(width,height)
+        allocation=Gdk.Rectangle(); allocation.x=0; allocation.y=0
+        allocation.width=width; allocation.height=height
+        self.child.size_allocate(allocation,baseline)
+
+    def do_snapshot(self,snapshot):
+        self.snapshot_child(self.child,snapshot)
+
+    def do_dispose(self):
+        if self.child.get_parent() is self: self.child.unparent()
 
 class Window(AppWindow):
     def __init__(self,app):
@@ -80,17 +101,17 @@ class Window(AppWindow):
         self.picture.add_controller(self.position_drag)
         self.work.append(self.picture)
         self.preview_host=Gtk.Overlay(child=self.work,hexpand=True,vexpand=True)
-        self.creation=Island(); self.creation.set_size_request(320,-1)
-        self.creation_tabs=ModeSwitch([('style','Style'),('colors','Colors'),('adjust','Adjust')],
-            current='style',fill=True,label='Creation tools',on_change=self.show_creation)
-        padded(self.creation_tabs,12); self.creation.append(self.creation_tabs)
-        self.creation_scroll=Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER,
-            vexpand=True,hexpand=True)
-        padded(self.creation_scroll,12); self.creation_scroll.set_margin_top(0)
-        self.creation.append(self.creation_scroll)
-        self.workspace=Gtk.Box(spacing=12,hexpand=True,vexpand=True)
-        self.workspace.append(self.creation); self.workspace.append(self.preview_host)
-        self.workspace.set_margin_bottom(84)
+        self.creation_pages={key:box(0) for key in ('style','colors','adjust')}
+        self.changing_creation=False
+        self.creation=FloatingPanel('Create wallpaper','palette',
+            pages=[(key,title,self.creation_pages[key]) for key,title in
+                   (('style','Style'),('colors','Colors'),('adjust','Adjust'))],
+            closable=False,on_page=self.creation_page_changed,
+            on_folded=lambda *_:self.update_preview_space())
+        self.creation.set_holds('inspector')
+        self.preview_viewport=PreviewViewport(self.preview_host,lambda w,h:self.update_preview_space(h))
+        self.workspace=CreativeWorkspace(self.preview_viewport,left=self.creation,grid=False)
+        self.workspace.set_hexpand(True); self.workspace.set_vexpand(True)
         self.host=ToastHost(self.workspace); self.host.set_hexpand(True); self.host.set_vexpand(True)
         self.body.append(self.host)
         self.document_title=TitleIsland(self.design.name,'4K desktop · 3840 × 2160',
@@ -104,9 +125,9 @@ class Window(AppWindow):
         self.status=label(''); apply_type(self.status,'caption')
         self.status.set_halign(Gtk.Align.CENTER); self.status.set_valign(Gtk.Align.END)
         self.status.set_ellipsize(Pango.EllipsizeMode.END); self.status.set_wrap(False)
-        self.status.set_margin_bottom(8); self.status.set_margin_start(16); self.status.set_margin_end(16)
+        self.status.set_margin_bottom(CREATIVE['panel_reserve']); self.status.set_margin_start(16); self.status.set_margin_end(16)
         self.preview_host.add_overlay(self.status); self.preview_host.set_measure_overlay(self.status,False)
-        self.action_center=ActionCenter().attach(self.host)
+        self.action_center=ActionCenter().attach(self.host,over='frame',inset='tight')
         self.action_center.bar.update_property([Gtk.AccessibleProperty.LABEL],['Wallpaper studio'])
         # The panel is a short, scrollable editing surface. Leave a live preview above it.
         self.action_center.panel.set_max_content_height(260)
@@ -116,15 +137,15 @@ class Window(AppWindow):
             BarAction('ellipsis',tooltip='More actions',panel=self.more_panel,key='more'),
             BarAction('download','Export',tooltip='Export wallpaper',primary=True,on_activate=self.show_export),
         ])
-        breakpoint=Adw.Breakpoint.new(Adw.BreakpointCondition.parse('max-width: 700sp'))
+        breakpoint=Adw.Breakpoint.new(Adw.BreakpointCondition.parse('max-width: 559sp'))
         breakpoint.connect('apply',lambda *_:self.set_compact(True))
         breakpoint.connect('unapply',lambda *_:self.set_compact(False))
         self.add_breakpoint(breakpoint)
-        short=Adw.Breakpoint.new(Adw.BreakpointCondition.parse('max-height: 550sp and min-width: 701sp'))
+        short=Adw.Breakpoint.new(Adw.BreakpointCondition.parse('max-height: 550sp and min-width: 560sp'))
         short.connect('apply',lambda *_:self.set_short(True))
         short.connect('unapply',lambda *_:self.set_short(False))
         self.add_breakpoint(short)
-        compact_short=Adw.Breakpoint.new(Adw.BreakpointCondition.parse('max-width: 700sp and max-height: 550sp'))
+        compact_short=Adw.Breakpoint.new(Adw.BreakpointCondition.parse('max-width: 559sp and max-height: 550sp'))
         compact_short.connect('apply',lambda *_:(self.set_compact(True),self.set_short(True)))
         compact_short.connect('unapply',lambda *_:(self.set_compact(False),self.set_short(False)))
         self.add_breakpoint(compact_short)
@@ -147,30 +168,35 @@ class Window(AppWindow):
 
     def set_compact(self,compact):
         self.compact=compact
-        self.workspace.set_orientation(Gtk.Orientation.VERTICAL if compact else Gtk.Orientation.HORIZONTAL)
-        self.workspace.reorder_child_after(self.creation,self.preview_host if compact else None)
-        self.creation.set_size_request(-1 if compact else 320,-1)
-        self.creation.set_vexpand(not compact)
-        self.creation_scroll.set_vexpand(not compact)
-        self.creation_scroll.set_propagate_natural_height(compact)
-        self.panel_changed(self.action_center,self.action_center.grown or '')
+        self.update_preview_space()
 
     def set_short(self,short):
-        self.short=short; self.panel_changed(self.action_center,self.action_center.grown or '')
+        self.short=short; self.update_preview_space()
 
     def panel_changed(self,center,key):
         self.panel_key=key or None
-        cap=120 if self.short else 220 if self.compact else 260
-        self.action_center.panel.set_max_content_height(cap)
-        self.workspace.set_margin_bottom(cap+84 if key else 72 if self.short else 84)
-        self.creation_scroll.set_max_content_height(64 if self.short else 200 if self.compact else -1)
-        self.creation_tabs.set_margin_top(6 if self.short else 12)
-        self.creation_tabs.set_margin_bottom(6 if self.short else 12)
-        self.creation_scroll.set_margin_bottom(6 if self.short else 12)
-        self.picture.set_margin_top(64 if self.short else 80)
-        self.picture.set_margin_bottom(12 if self.short else 24)
-        self.creation.set_visible(not (self.compact and bool(key)))
-        self.status.set_visible(not bool(key))
+        self.action_center.panel.set_max_content_height(120 if self.short else 220 if self.compact else 260)
+        if self.compact and key: self.creation.set_folded(True)
+        self.update_preview_space()
+
+    def update_preview_space(self,height=None):
+        # Reserve app-content space using the same CR1 metrics as Canvas/Write.
+        # The native workspace owns all chrome allocation and bar clearance.
+        if not hasattr(self,'workspace'): return
+        opened=self.compact and not self.creation.get_folded()
+        width=CREATIVE['panel_left_width']+2*CREATIVE['panel_inset']
+        self.preview_host.set_margin_start(0 if self.compact else width)
+        cap=0
+        if opened:
+            _,natural,*_=self.creation.measure(Gtk.Orientation.VERTICAL,max(1,self.workspace.get_width()))
+            cap=min(natural,(height if height is not None else self.workspace.get_height())*CREATIVE['panel_phone_max_height_pct']//100)
+        output=120 if self.short else 220 if self.compact else 260
+        self.picture.set_margin_bottom(max(cap,output if self.panel_key else CREATIVE['panel_reserve']))
+        self.picture.set_margin_top(12 if self.short and opened else 64 if self.short else 136 if self.compact and not opened else 80)
+        self.document_title.set_margin_top(72 if self.compact and not opened else 16)
+        self.document_title.set_visible(not (self.short and opened))
+        self.status.set_visible(not bool(self.panel_key) and not self.short and not opened)
+        if hasattr(self,'action_center'): self.action_center.set_visible(not opened)
 
     def show_editor(self,show):
         if show: self.open_panel('adjust')
@@ -181,15 +207,22 @@ class Window(AppWindow):
             self.action_center.fold_panel(); self.show_creation(key); return
         self.action_center.grow(key,lambda:self.make_panel(key),anchor=self.bar_anchor(key))
 
+    def creation_page_changed(self,key):
+        if not self.changing_creation: self.show_creation(key)
+
     def show_creation(self,key):
-        self.creation_tabs.set_current(key)
-        self.creation_key=key
-        self.creation_scroll.set_child(self.make_panel(key))
-        self.creation_scroll.get_vadjustment().set_value(0)
+        self.set_creation_content(key,self.make_panel(key))
 
     def set_creation_content(self,key,content):
-        self.creation_key=key; self.creation_scroll.set_child(content)
-        self.creation_scroll.get_vadjustment().set_value(0)
+        self.creation_key=key
+        page='colors' if key=='edit-colors' else key
+        holder=self.creation_pages[page]
+        while holder.get_first_child(): holder.remove(holder.get_first_child())
+        holder.append(content)
+        self.changing_creation=True
+        self.creation.set_page(page); self.creation.set_folded(False)
+        self.changing_creation=False
+        self.update_preview_space()
 
     def bar_anchor(self,key):
         child=self.action_center.bar_row.get_first_child()
@@ -260,7 +293,7 @@ class Window(AppWindow):
 
     def choose_palette(self,name):
         self.change('palette',name)
-        self.creation_scroll.set_child(self.colors_panel())
+        self.set_creation_content('colors',self.colors_panel())
 
     def adjust_panel(self):
         panel=self.panel_header('Adjust '+self.design.effect.lower())
@@ -447,7 +480,7 @@ class Window(AppWindow):
             self.sync_choices(self.design.effect)
             self.thumbnail_epoch+=1
             self.load_thumbnails([(tile,replace(self.design,effect=effect),160,90) for effect,tile in self.choice_buttons.items()])
-        if self.creation_key=='colors': self.creation_scroll.set_child(self.colors_panel())
+        if self.creation_key=='colors': self.set_creation_content('colors',self.colors_panel())
         for key,row in self.parameter_rows.items(): row.set_visible(adjustment_visible(key,self.design.effect))
         if self.creation_key=='adjust' and 'edge' in self.controls:
             self.adjust_heading.set_label('Adjust '+self.design.effect.lower())
