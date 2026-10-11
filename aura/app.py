@@ -127,6 +127,7 @@ class Window(AppWindow):
         self.document_info=identity_chip(BarChip(self.design.name,meta='3840 × 2160',presentation='identity'))
         copy=self.document_info.get_last_child()
         self.document_name=copy.get_first_child(); self.document_detail=copy.get_last_child()
+        self.document_name.set_max_width_chars(14); self.document_detail.set_max_width_chars(18)
         self.action_center=ActionCenter().attach(self.host,over='frame',inset='tight')
         self.action_center.bar.update_property([Gtk.AccessibleProperty.LABEL],['Wallpaper studio'])
         # The panel is a short, scrollable editing surface. Leave a live preview above it.
@@ -211,8 +212,11 @@ class Window(AppWindow):
             ok,bounds=self.action_center.panel.compute_bounds(self.preview_viewport)
             if ok and bounds.get_height()>0:
                 output_space=max(0,round((height if height is not None else self.preview_viewport.get_height())-bounds.get_y()))+CREATIVE['panel_inset']
-        self.picture.set_margin_bottom(max(cap,output_space))
-        self.picture.set_margin_top(12 if opened or not self.compact else 64)
+        top=12 if opened or not self.compact else 64
+        available=height if height is not None else self.preview_viewport.get_height()
+        # Keep a 64px live image while native overlay geometry settles on resize.
+        bottom=min(max(cap,output_space),max(0,available-top-64)) if available else max(cap,output_space)
+        self.picture.set_margin_bottom(bottom); self.picture.set_margin_top(top)
         if hasattr(self,'action_center'): self.action_center.set_visible(not opened)
 
     def show_editor(self,show):
