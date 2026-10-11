@@ -147,7 +147,8 @@ def colors():
 def position():
     win=app.get_active_window(); before=win.design.to_dict(); undo_count=len(win.undo_stack)
     # Emit the actual pointer gesture over the rendered image's center.
-    x,y=win.picture.get_width()/2+10,win.picture.get_height()/2
+    ox,oy,w,h=win.zoom_preview.fit_rect
+    x,y=ox+w/2+10,oy+h/2
     win.position_drag.emit('drag-begin',x,y)
     assert win.design.to_dict()==before,'Grabbing the preview must not jump its pattern'
     win.position_drag.emit('drag-update',24.0,12.0)
@@ -236,6 +237,32 @@ def zoom():
     assert win.design.to_dict()==before and (win.width,win.height)==dimensions and win.revision==revision
     assert win.bar_anchor('size').bar_words.get_text()==f'{win.width:,} × {win.height:,}'
     report['size_stable_side_by_side_zoom_pixels_only']='passed'
+    win.action_center.fold_panel()
+    previous=win.picture.get_paintable()
+    win.picture.set_paintable(Gdk.MemoryTexture.new(160,90,Gdk.MemoryFormat.R8G8B8,
+        GLib.Bytes.new(bytes((239,89,34))*160*90),160*3))
+    win.creation.set_visible(False); win.action_center.set_visible(False); win.set_zoom(8)
+    capture(win,'zoom-full-workspace-rounded-corners')
+    from gi.repository import GdkPixbuf
+    pixbuf=GdkPixbuf.Pixbuf.new_from_file(str(out/'zoom-full-workspace-rounded-corners.png'))
+    data=pixbuf.get_pixels(); stride=pixbuf.get_rowstride(); channels=pixbuf.get_n_channels()
+    def orange(x,y):
+        at=round(y)*stride+round(x)*channels
+        r,g,b=data[at:at+3]; return r>180 and 40<g<160 and b<100
+    ok,area=win.host.compute_bounds(win); assert ok
+    x,y,w,h=area.get_x(),area.get_y(),area.get_width(),area.get_height()
+    # The toolkit's inset rim shades several edge pixels. Find the painted
+    # extent and permit only that rim, not Aura's former 24/92/264px gaps.
+    horizontal=[px for px in range(round(x),round(x+w)) if orange(px,y+h/2)]
+    vertical=[py for py in range(round(y),round(y+h)) if orange(x+w/2,py)]
+    assert horizontal and vertical
+    left,right=horizontal[0],horizontal[-1]; top,bottom=vertical[0],vertical[-1]
+    assert max(left-x,x+w-1-right,top-y,y+h-1-bottom)<=8,'Zoom stopped before the native rim'
+    for px,py in ((left+1,top+1),(right-1,top+1),(left+1,bottom-1),(right-1,bottom-1)):
+        assert not orange(px,py),f'Native inner corner failed to clip: {px},{py}'
+    report['zoom_reaches_all_edges_native_four_corner_clip']='passed'
+    win.picture.set_paintable(previous); win.set_zoom(1)
+    win.creation.set_visible(True); win.action_center.set_visible(True)
     win.show_monitors(); later(monitors)
 
 
@@ -314,7 +341,7 @@ def rtl():
     assert win.action_center.bar.get_direction()==Gtk.TextDirection.RTL
     assert win.creation.get_page()=='adjust'
     ok,panel_bounds=win.creation.compute_bounds(win.host)
-    preview_ok,preview_bounds=win.preview_host.compute_bounds(win.host)
+    preview_ok,preview_bounds=win.picture.compute_bounds(win.host)
     assert ok and preview_ok and preview_bounds.get_x()>=panel_bounds.get_x()+panel_bounds.get_width(),'Preview overlaps native left panel in RTL'
     # Native range keyboard controller: arrows change the value; Esc folds the bar.
     slider=win.controls['angle']; old=slider.get_value()

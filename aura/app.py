@@ -9,7 +9,7 @@ gi.require_version('Gtk','4.0')
 gi.require_version('Adw','1')
 gi.require_version('LumaUI','1')
 from gi.repository import Gtk, Adw, Gdk, Gio, GLib, LumaUI, Pango, Graphene
-from luma_appkit import (AppWindow, Command, CommandGroup, CommandRegistry, install_appkit,
+from luma_appkit import (AppWindow, Island, Command, CommandGroup, CommandRegistry, install_appkit,
                          ColorSwatch, IconButton, ActionCenter, BarAction,
                          PanelRow, PanelHeading, PanelField,
                          ToastHost, Toast, MediaTile, TextField, FloatingPanel, CreativeWorkspace, TextButton, PropertySection, PropertyNumber, PropertyChoice, evaluate_number, apply_type)
@@ -59,19 +59,24 @@ class ZoomPreview(Gtk.Widget):
     def __init__(self,child):
         super().__init__(hexpand=True,vexpand=True,overflow=Gtk.Overflow.HIDDEN)
         self.child=child; child.set_parent(self); self.zoom=1.0
+        self.insets=(24,12,24,92); self.fit_rect=(0,0,1,1)
 
     def do_measure(self,orientation,for_size): return 1,1,-1,-1
 
     def do_size_allocate(self,width,height,baseline):
-        allocation=Gdk.Rectangle(); allocation.x=0; allocation.y=0
-        allocation.width=width; allocation.height=height
+        left,top,right,bottom=self.insets
+        w,h=max(1,width-left-right),max(1,height-top-bottom)
+        self.fit_rect=(left,top,w,h)
+        allocation=Gdk.Rectangle(); allocation.x=left; allocation.y=top
+        allocation.width=w; allocation.height=h
         self.child.size_allocate(allocation,baseline)
 
     def do_snapshot(self,snapshot):
         snapshot.save()
-        point=Graphene.Point(); point.init(self.get_width()/2,self.get_height()/2)
+        x,y,w,h=self.fit_rect
+        point=Graphene.Point(); point.init(x+w/2,y+h/2)
         snapshot.translate(point); snapshot.scale(self.zoom,self.zoom)
-        point.init(-self.get_width()/2,-self.get_height()/2); snapshot.translate(point)
+        point.init(-x-w/2,-y-h/2); snapshot.translate(point)
         self.snapshot_child(self.child,snapshot); snapshot.restore()
 
     def do_dispose(self):
@@ -130,7 +135,7 @@ class Window(AppWindow):
         self.canvas_stack=Gtk.Stack(hexpand=True,vexpand=True,transition_type=Gtk.StackTransitionType.NONE)
         self.canvas_stack.set_hhomogeneous(False); self.canvas_stack.set_vhomogeneous(False)
         self.canvas_stack.add_named(self.zoom_preview,'wallpaper')
-        padded(self.canvas_stack,24); self.canvas_stack.set_margin_top(80)
+
         self.zoom_scroll=Gtk.EventControllerScroll.new(Gtk.EventControllerScrollFlags.VERTICAL)
         self.zoom_scroll.connect('scroll',self.scroll_zoom)
         self.zoom_preview.add_controller(self.zoom_scroll)
@@ -155,7 +160,8 @@ class Window(AppWindow):
         self.workspace=CreativeWorkspace(self.preview_viewport,left=self.creation,grid=False)
         self.workspace.set_hexpand(True); self.workspace.set_vexpand(True)
         self.host=ToastHost(self.workspace); self.host.set_hexpand(True); self.host.set_vexpand(True)
-        self.body.append(self.host)
+        self.surface=Island(); self.surface.set_hexpand(True); self.surface.set_vexpand(True)
+        self.surface.append(self.host); self.body.append(self.surface)
         self.status=label(''); self.status.set_visible(False)
         self.action_center=ActionCenter().attach(self.host,over='frame',inset='tight')
         self.action_center.bar.update_property([Gtk.AccessibleProperty.LABEL],['Wallpaper studio'])
@@ -231,9 +237,7 @@ class Window(AppWindow):
         if not hasattr(self,'workspace'): return
         opened=self.compact and self.panel_key!='monitors' and not self.creation.get_folded()
         width=0 if self.panel_key=='monitors' else CREATIVE['panel_left_width']+2*CREATIVE['panel_inset']
-        rtl=self.preview_host.get_direction()==Gtk.TextDirection.RTL
-        self.preview_host.set_margin_start(0 if self.compact or rtl else width)
-        self.preview_host.set_margin_end(width if not self.compact and rtl else 0)
+        left=0 if self.compact else width
         cap=0
         if opened:
             _,natural,*_=self.creation.measure(Gtk.Orientation.VERTICAL,max(1,self.workspace.get_width()))
@@ -249,7 +253,14 @@ class Window(AppWindow):
         available=height if height is not None else self.preview_viewport.get_height()
         # Keep a 64px live image while native overlay geometry settles on resize.
         bottom=min(max(cap,output_space),max(0,available-top-64)) if available else max(cap,output_space)
-        self.canvas_stack.set_margin_bottom(bottom); self.canvas_stack.set_margin_top(top)
+        arranging=self.panel_key=='monitors'
+        self.canvas_stack.set_margin_start(24 if arranging else 0)
+        self.canvas_stack.set_margin_end(24 if arranging else 0)
+        self.canvas_stack.set_margin_top(top if arranging else 0)
+        self.canvas_stack.set_margin_bottom(bottom if arranging else 0)
+        insets=(left+24,top,24,bottom)
+        if not arranging and self.zoom_preview.insets!=insets:
+            self.zoom_preview.insets=insets; self.zoom_preview.queue_allocate()
         if hasattr(self,'action_center'): self.action_center.set_visible(not opened)
 
     def show_editor(self,show):
@@ -463,7 +474,8 @@ class Window(AppWindow):
         return True
 
     def position_begin(self,gesture,x,y):
-        w,h=self.picture.get_width(),self.picture.get_height()
+        origin_x,origin_y,w,h=self.zoom_preview.fit_rect
+        x-=origin_x; y-=origin_y
         scale=min(w/self.width,h/self.height)*self.zoom_preview.zoom
         image_w,image_h=self.width*scale,self.height*scale
         left,top=(w-image_w)/2,(h-image_h)/2
