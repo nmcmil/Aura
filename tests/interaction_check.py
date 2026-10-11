@@ -114,7 +114,7 @@ def colors():
     assert win.creation.get_visible() and win.action_center.grown is None
     report['sidebar_and_custom_dimensions']='passed'
     win.numeric_change('angle',45); assert win.design.angle==45
-    win.numeric_change('angle',0); assert win.controls['angle'].get_value()==0
+    win.numeric_change('angle',0); assert win.controls['angle'].value==0
     win.save(); saved_id=win.design_id; saved_count=len(win.library.designs())
     app.activate_action('design-save',None)
     assert win.design_id==saved_id and len(win.library.designs())==saved_count
@@ -124,17 +124,30 @@ def colors():
     def counted_finish(*args):
         frames.append(time.monotonic()); return original_finish(*args)
     win.finish_preview=counted_finish
+    later(slider_drag); return False
+
+
+@guard
+def slider_drag():
+    win=app.get_active_window()
     drag_controller=next(controller for widget in descendants(win.controls['angle'])
         for controller in [widget.observe_controllers().get_item(i) for i in range(widget.observe_controllers().get_n_items())]
         if isinstance(controller,Gtk.GestureDrag))
     undo_before=len(win.undo_stack)
-    drag_controller.emit('drag-begin',0.0,0.0)
+    assert win.controls['angle'].__gtype__.name=='LumaUIValueSlider'
+    # Synthetic gesture origin is zero; start at the native range's current thumb.
+    slider_range=win.controls['angle'].range
+    from luma_appkit.media_adjust import A
+    usable=slider_range.get_width()-A['thumb']
+    assert usable>50,'Slider must be allocated before pointer input'
+    start_x=A['thumb']/2+(slider_range.value-slider_range.minimum)/(slider_range.maximum-slider_range.minimum)*usable
+    drag_controller.emit('drag-begin',float(start_x),0.0)
     start_time=time.monotonic(); steps=[0]
     @guard
     def drag():
-        steps[0]+=1; drag_controller.emit('drag-update',2.0*steps[0],0.0)
+        steps[0]+=1; drag_controller.emit('drag-update',float(start_x+usable*.4*steps[0]/80),0.0)
         if steps[0]<80:return True
-        drag_controller.emit('drag-end',2.0*steps[0],0.0)
+        drag_controller.emit('drag-end',float(start_x+usable*.4),0.0)
         assert len(win.undo_stack)==undo_before+1 and not win.gesture_active,'Native scrub must be one undo step'
         duration=time.monotonic()-start_time
         report['live_drag']={'updates':steps[0],'frames_before_release':len(frames),'seconds':round(duration,3)}
@@ -344,9 +357,9 @@ def rtl():
     preview_ok,preview_bounds=win.picture.compute_bounds(win.host)
     assert ok and preview_ok and preview_bounds.get_x()>=panel_bounds.get_x()+panel_bounds.get_width(),'Preview overlaps native left panel in RTL'
     # Native range keyboard controller: arrows change the value; Esc folds the bar.
-    slider=win.controls['angle']; old=slider.get_value()
+    slider=win.controls['angle']; old=slider.value
     number_key(slider,Gdk.KEY_Up)
-    assert slider.get_value()!=old
+    assert slider.value!=old
     bar_keys=win.action_center.bar.observe_controllers()
     for i in range(bar_keys.get_n_items()):
         key=bar_keys.get_item(i)

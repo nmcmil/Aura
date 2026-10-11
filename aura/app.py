@@ -12,7 +12,7 @@ from gi.repository import Gtk, Adw, Gdk, Gio, GLib, LumaUI, Pango, Graphene
 from luma_appkit import (AppWindow, Island, Command, CommandGroup, CommandRegistry, install_appkit,
                          ColorSwatch, IconButton, ActionCenter, BarAction,
                          PanelRow, PanelHeading, PanelField,
-                         ToastHost, Toast, MediaTile, TextField, FloatingPanel, CreativeWorkspace, TextButton, PropertySection, PropertyNumber, PropertyChoice, evaluate_number, apply_type)
+                         ToastHost, Toast, MediaTile, TextField, FloatingPanel, CreativeWorkspace, TextButton, PropertySection, PropertyNumber, PropertyChoice, ValueSlider, evaluate_number, apply_type)
 from .model import Design, Monitor, PALETTES, EFFECTS, PRESETS, bounds, dimensions
 from .render import pixels, export_png, Cancelled
 from .store import Library
@@ -376,8 +376,9 @@ class Window(AppWindow):
         pages={key:PropertySection(title) for key,title in (('shape','Shape'),('position','Position'),('finish','Finish'))}
         for key,title,lo,hi,step,unit,factor,page in ADJUSTMENTS:
             if key=='edge' and self.design.effect not in ('Glow','Halo'): title='Edge shading'
-            field=PropertyNumber(title,getattr(self.design,key)*factor,unit=unit,minimum=lo*factor,maximum=hi*factor,
-                step=step*factor,digits=0,on_change=lambda value,k=key,f=factor:self.change(k,value/f))
+            field=ValueSlider(title,getattr(self.design,key)*factor,lo*factor,hi*factor,unit=unit or '',
+                default=getattr(Design(),key)*factor,step=step*factor,layout='editor',
+                on_change=lambda value,k=key,f=factor:self.change(k,value/f))
             gesture=Gtk.GestureClick(); gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
             gesture.connect('pressed',lambda *_:self.begin_gesture())
             gesture.connect('released',lambda *_:self.end_gesture()); field.add_controller(gesture)
@@ -544,7 +545,8 @@ class Window(AppWindow):
         self.design.palette='Custom'; self.sync_controls(); self.queue_preview()
     def numeric_change(self,key,value):
         self.change(key,value); self.sync_controls()
-    def begin_gesture(self): self.gesture_active=True; self.gesture_checkpoint=False
+    def begin_gesture(self):
+        if not self.gesture_active: self.gesture_active=True; self.gesture_checkpoint=False
     def end_gesture(self): self.gesture_active=False; self.gesture_checkpoint=False
 
     def checkpoint(self):
