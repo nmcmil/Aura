@@ -8,20 +8,23 @@ import gi
 gi.require_version('Gtk','4.0')
 gi.require_version('Adw','1')
 gi.require_version('LumaUI','1')
-from gi.repository import Gtk, Adw, Gdk, Gio, GLib, LumaUI, Pango
+from gi.repository import Gtk, Adw, Gdk, Gio, GLib, LumaUI, Pango, Graphene
 from luma_appkit import (AppWindow, Island, Command, CommandGroup, CommandRegistry, install_appkit,
-                         NumericField, ColorSwatch, IconButton, ActionCenter, BarAction,
-                         PanelRow, PanelHeading, PanelField, ModeSwitch, ValueSlider,
-                         TitleIsland, ToastHost, Toast, MediaTile, TextField, FloatingPanel, CreativeWorkspace, evaluate_number, apply_type)
+                         ColorSwatch, IconButton, ActionCenter, BarAction,
+                         PanelRow, PanelHeading, PanelField,
+                         BarChip, BarWidget, ToastHost, Toast, MediaTile, TextField, FloatingPanel, CreativeWorkspace, TextButton, PropertySection, PropertyNumber, PropertyChoice, evaluate_number, apply_type)
 from .model import Design, Monitor, PALETTES, EFFECTS, PRESETS, bounds, dimensions
 from .render import pixels, export_png, Cancelled
 from .store import Library
 from .studio import STYLE_NOTES, ADJUSTMENTS, adjustment_visible
 from luma_appkit.lumaui_tokens import CREATIVE
+from luma_appkit.bar_items import identity_chip
+from luma_appkit.action_bubble import MenuItem
 
 APP_ID='io.github.nmcmil.Aura'
 
-def label(text): return Gtk.Label(label=text,xalign=0,wrap=True)
+def label(text):
+    result=Gtk.Label(label=text,xalign=0,wrap=True); apply_type(result,'body'); return result
 def box(spacing=12): return Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=spacing)
 def padded(widget, margin=16):
     for side in ('top','bottom','start','end'): getattr(widget,'set_margin_'+side)(margin)
@@ -42,6 +45,11 @@ class PreviewViewport(Gtk.Widget):
         self.child.size_allocate(allocation,baseline)
 
     def do_snapshot(self,snapshot):
+        # App content shares the frame's named background, without an inset surface.
+        found,color=self.get_style_context().lookup_color('luma_window')
+        if found:
+            bounds=Graphene.Rect(); bounds.init(0,0,self.get_width(),self.get_height())
+            snapshot.append_color(color,bounds)
         self.snapshot_child(self.child,snapshot)
 
     def do_dispose(self):
@@ -88,7 +96,7 @@ class Window(AppWindow):
         super().__init__(application=app,app_id=APP_ID,title='Aura',icon_name=APP_ID,
                          commands=self.commands,default_width=1180,default_height=780,
                          minimum_width=360,minimum_height=420)
-        self.work=Island(); self.work.set_hexpand(True); self.work.set_vexpand(True)
+        self.work=box(0); self.work.set_hexpand(True); self.work.set_vexpand(True)
         self.picture=Gtk.Picture(can_shrink=True,hexpand=True,vexpand=True,
                                  content_fit=Gtk.ContentFit.CONTAIN)
         self.picture.update_property([Gtk.AccessibleProperty.LABEL],['Live wallpaper preview'])
@@ -114,27 +122,18 @@ class Window(AppWindow):
         self.workspace.set_hexpand(True); self.workspace.set_vexpand(True)
         self.host=ToastHost(self.workspace); self.host.set_hexpand(True); self.host.set_vexpand(True)
         self.body.append(self.host)
-        self.document_title=TitleIsland(self.design.name,'4K desktop · 3840 × 2160',
-            lead='menu',lead_label='Saved designs',on_lead=self.show_library,
-            on_title=self.rename,phone_only=False)
-        self.document_title.set_margin_start(16); self.document_title.set_margin_top(16)
-        self.document_title.set_margin_end(16)
-        self.document_title.title_label.set_max_width_chars(26)
-        self.preview_host.add_overlay(self.document_title); self.preview_host.set_measure_overlay(self.document_title,False)
-        self.title_label=self.document_title.title_label
-        self.status=label(''); apply_type(self.status,'caption')
-        self.status.set_halign(Gtk.Align.CENTER); self.status.set_valign(Gtk.Align.END)
-        self.status.set_ellipsize(Pango.EllipsizeMode.END); self.status.set_wrap(False)
-        self.status.set_margin_bottom(CREATIVE['panel_reserve']); self.status.set_margin_start(16); self.status.set_margin_end(16)
-        self.preview_host.add_overlay(self.status); self.preview_host.set_measure_overlay(self.status,False)
+        self.status=label(''); self.status.set_visible(False)
+        self.document_info=identity_chip(BarChip(self.design.name,meta='3840 × 2160',presentation='identity'))
+        copy=self.document_info.get_last_child()
+        self.document_name=copy.get_first_child(); self.document_detail=copy.get_last_child()
         self.action_center=ActionCenter().attach(self.host,over='frame',inset='tight')
         self.action_center.bar.update_property([Gtk.AccessibleProperty.LABEL],['Wallpaper studio'])
         # The panel is a short, scrollable editing surface. Leave a live preview above it.
         self.action_center.panel.set_max_content_height(260)
         self.action_center.connect('panel-changed',self.panel_changed)
-        self.action_center.show_bar([
+        self.action_center.show_bar([BarWidget(self.document_info),
             BarAction('monitor','Size',tooltip='Wallpaper size',panel=lambda:self.make_panel('size'),key='size'),
-            BarAction('ellipsis',tooltip='More actions',panel=self.more_panel,key='more'),
+            BarAction('ellipsis',tooltip='More actions',menu=self.more_menu,key='more'),
             BarAction('download','Export',tooltip='Export wallpaper',primary=True,on_activate=self.show_export),
         ])
         breakpoint=Adw.Breakpoint.new(Adw.BreakpointCondition.parse('max-width: 559sp'))
@@ -193,11 +192,12 @@ class Window(AppWindow):
             _,natural,*_=self.creation.measure(Gtk.Orientation.VERTICAL,max(1,self.workspace.get_width()))
             cap=min(natural,(height if height is not None else self.workspace.get_height())*CREATIVE['panel_phone_max_height_pct']//100)
         output=120 if self.short else 220 if self.compact else 260
-        self.picture.set_margin_bottom(max(cap,output if self.panel_key else CREATIVE['panel_reserve']))
-        self.picture.set_margin_top(12 if self.short and opened else 64 if self.short else 136 if self.compact and not opened else 80)
-        self.document_title.set_margin_top(72 if self.compact and not opened else 16)
-        self.document_title.set_visible(not (self.short and opened))
-        self.status.set_visible(not bool(self.panel_key) and not self.short and not opened)
+        output_space=CREATIVE['panel_reserve']
+        if self.panel_key and hasattr(self,'action_center'):
+            _,bar_height,*_=self.action_center.bar.measure(Gtk.Orientation.VERTICAL,max(1,self.workspace.get_width()))
+            output_space=output+bar_height+CREATIVE['tools_bottom']+2*CREATIVE['panel_inset']
+        self.picture.set_margin_bottom(max(cap,output_space))
+        self.picture.set_margin_top(12 if opened or not self.compact else 64)
         if hasattr(self,'action_center'): self.action_center.set_visible(not opened)
 
     def show_editor(self,show):
@@ -242,7 +242,7 @@ class Window(AppWindow):
         if key=='colors': return self.colors_panel()
         if key=='adjust': return self.adjust_panel()
         if key=='size': return self.make_canvas_controls()
-        return self.more_panel()
+        raise ValueError(f'Unknown studio panel: {key}')
 
     def panel_header(self,title,description=None):
         panel=box(10); panel.append(PanelHeading(title))
@@ -272,16 +272,16 @@ class Window(AppWindow):
             if isinstance(tile,MediaTile): tile.set_selected(key==selected)
 
     def colors_panel(self):
-        panel=self.panel_header('Colors')
-        for name,colors in PALETTES.items():
-            lead=self.palette_strip(colors)
-            row=PanelRow(name,lead=lead,selected=self.design.palette==name,closes=False,
-                         on_activate=lambda n=name:self.choose_palette(n))
-            panel.append(row); self.choice_buttons[name]=row
-        panel.append(PanelRow('Edit individual colors',icon='palette',subtitle='Make this palette your own',
-                              submenu=True,on_activate=self.edit_colors))
-        panel.append(PanelRow('Reverse colors',icon='arrow-left-right',closes=False,on_activate=self.reverse_palette))
-        self.sync_choices(self.design.palette)
+        panel=box(0)
+        choices=[(name,name) for name in PALETTES]
+        if self.design.palette=='Custom': choices.append(('Custom','Custom'))
+        picker=PropertyChoice('Palette',choices,current=self.design.palette,on_change=self.choose_palette)
+        self.palette_picker=picker
+        panel.append(PropertySection('Palette',picker,self.palette_strip(self.design.colors)))
+        actions=box(6)
+        actions.append(TextButton('Edit colors',icon='palette',style='fill',small=True,on_click=self.edit_colors))
+        actions.append(TextButton('Reverse colors',icon='arrow-left-right',style='fill',small=True,on_click=self.reverse_palette))
+        panel.append(PropertySection('Colors',actions))
         return panel
 
     def palette_strip(self,colors):
@@ -298,58 +298,52 @@ class Window(AppWindow):
         self.set_creation_content('colors',self.colors_panel())
 
     def adjust_panel(self):
-        panel=self.panel_header('Adjust '+self.design.effect.lower())
-        self.adjust_heading=panel.get_first_child().label
-        tabs=ModeSwitch([('shape','Shape'),('position','Position'),('finish','Finish')],
-            current=self.adjust_page,on_change=self.select_adjust_page,label='Adjustment section',fill=True)
-        panel.append(tabs)
-        self.adjust_stack=Gtk.Stack(transition_type=Gtk.StackTransitionType.NONE)
-        pages={key:box(12) for key in ('shape','position','finish')}
+        panel=box(0); self.adjust_stack=Gtk.Stack(transition_type=Gtk.StackTransitionType.NONE)
         self.adjust_stack.set_vhomogeneous(False)
+        tabs=PropertyChoice('Adjustment',[(key,title) for key,title in (('shape','Shape'),('position','Position'),('finish','Finish'))],
+            current=self.adjust_page,segments=True,on_change=self.select_adjust_page)
+        self.adjust_tabs=tabs
+        panel.append(PropertySection('Adjust',tabs))
+        pages={key:PropertySection(title) for key,title in (('shape','Shape'),('position','Position'),('finish','Finish'))}
         for key,title,lo,hi,step,unit,factor,page in ADJUSTMENTS:
             if key=='edge' and self.design.effect not in ('Glow','Halo'): title='Edge shading'
-            field=ValueSlider(title,getattr(self.design,key)*factor,lo*factor,hi*factor,
-                unit=unit,step=step*factor,default=getattr(Design(),key)*factor,layout='stacked',
-                on_change=lambda value,k=key,f=factor:self.change(k,value/f))
+            field=PropertyNumber(title,getattr(self.design,key)*factor,unit=unit,minimum=lo*factor,maximum=hi*factor,
+                step=step*factor,digits=0,on_change=lambda value,k=key,f=factor:self.change(k,value/f))
             gesture=Gtk.GestureClick(); gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
             gesture.connect('pressed',lambda *_:self.begin_gesture())
-            gesture.connect('released',lambda *_:self.end_gesture()); field.range.add_controller(gesture)
+            gesture.connect('released',lambda *_:self.end_gesture()); field.add_controller(gesture)
             self.controls[key]=field; self.number_fields[key]=(field,factor); self.parameter_rows[key]=field
             field.set_visible(adjustment_visible(key,self.design.effect)); pages[page].append(field)
         for key,page in pages.items(): self.adjust_stack.add_named(page,key)
         self.adjust_stack.set_visible_child_name(self.adjust_page); panel.append(self.adjust_stack)
-        note=label('You can also drag the wallpaper to move its pattern.'); apply_type(note,'caption')
-        pages['position'].append(note)
-        panel.append(PanelRow('Reset adjustments',icon='rotate-ccw',closes=False,on_activate=self.reset_adjustments))
+        panel.append(PropertySection('Defaults',TextButton('Reset adjustments',icon='rotate-ccw',style='fill',small=True,on_click=self.reset_adjustments)))
         return panel
 
     def select_adjust_page(self,key):
         self.adjust_page=key; self.adjust_stack.set_visible_child_name(key)
+        if self.adjust_tabs.get_current()!=key: self.adjust_tabs.set_current(key)
 
     def make_canvas_controls(self):
-        panel=self.panel_header('Wallpaper size')
-        panel.append(PanelRow('Screen presets',icon='monitor',submenu=True,on_activate=self.show_size_presets))
-        self.canvas_width=TextField('Width in pixels',value=str(self.width),purpose='number',size='panel',
+        panel=box(0)
+        selected=next((name for name,size in PRESETS.items() if size==(self.width,self.height)),'custom')
+        picker=PropertyChoice('Screen preset',[(name,f'{name} · {w:,} × {h:,}') for name,(w,h) in PRESETS.items()]+[('custom','Custom size')],
+            current=selected,on_change=lambda key:self.set_canvas(*PRESETS[key]) if key in PRESETS else None)
+        panel.append(PropertySection('Wallpaper size',picker))
+        self.canvas_width=TextField('Width in pixels',value=str(self.width),purpose='number',
             on_activate=lambda *_:self.apply_dimensions())
-        self.canvas_height=TextField('Height in pixels',value=str(self.height),purpose='number',size='panel',
+        self.canvas_height=TextField('Height in pixels',value=str(self.height),purpose='number',
             on_activate=lambda *_:self.apply_dimensions())
         for field in (self.canvas_width,self.canvas_height):
-            field.entry.set_width_chars(5); field.entry.set_max_width_chars(5); panel.append(field)
-        panel.append(PanelRow('Apply dimensions',icon='check',closes=False,on_activate=self.apply_dimensions))
-        panel.append(PanelRow('Rotate size',icon='rotate-cw',closes=False,
-                              on_activate=lambda:self.set_canvas(self.height,self.width)))
-        panel.append(PanelRow('Arrange multiple displays',icon='monitor',submenu=True,on_activate=self.show_monitors))
-        return panel
+            field.entry.set_width_chars(5); field.entry.set_max_width_chars(5)
+        panel.append(PropertySection('Exact dimensions',self.canvas_width,self.canvas_height))
+        actions=box(6)
+        for title,icon,callback in [('Apply dimensions','check',self.apply_dimensions),('Rotate size','rotate-cw',lambda:self.set_canvas(self.height,self.width)),
+                                    ('Arrange displays','monitor',self.show_monitors)]:
+            actions.append(TextButton(title,icon=icon,style='fill',small=True,on_click=callback))
+        panel.append(PropertySection('Apply',actions)); return panel
 
     def show_size_presets(self):
-        panel=self.panel_header('Screen presets')
-        def choose(size):
-            self.set_canvas(*size); self.open_panel('size')
-        for name,size in PRESETS.items():
-            panel.append(PanelRow(name,subtitle=f'{size[0]:,} × {size[1]:,} pixels',
-                selected=(self.width,self.height)==size,closes=False,on_activate=lambda s=size:choose(s)))
-        panel.append(PanelRow('Custom size',icon='pencil',submenu=True,on_activate=lambda:self.open_panel('size')))
-        self.action_center.grow('size-presets',panel)
+        self.action_center.grow('size-presets',self.make_canvas_controls())
 
     def apply_dimensions(self):
         width=evaluate_number(self.canvas_width.entry.get_text())
@@ -367,17 +361,17 @@ class Window(AppWindow):
         if not hasattr(self,'canvas_width'): return
         self.canvas_width.entry.set_text(str(self.width)); self.canvas_height.entry.set_text(str(self.height))
 
-    def more_panel(self):
-        panel=self.panel_header('Your design')
-        for title,icon,action,enabled in (
-            ('Save design','check',self.save,True),('Save a copy','copy',self.save_copy,True),
-            ('Rename','pencil',self.rename,True),('Saved designs','folder-open',self.show_library,True),
-            ('Surprise me','shuffle',self.surprise,True),
-            ('Undo','undo-2',self.undo,bool(self.undo_stack)),('Redo','redo-2',self.redo,bool(self.redo_stack)),
-            ('Open recipe…','folder-open',self.import_recipe,True),('Save recipe…','share-2',self.share_recipe,True),
-            ('Export history','history',self.show_history,True)):
-            panel.append(PanelRow(title,icon=icon,on_activate=action,sensitive=enabled))
-        return panel
+    def more_menu(self):
+        rows=[]
+        for title,icon,action in [('Save design','check',self.save),('Save a copy','copy',self.save_copy),
+            ('Rename','pencil',self.rename),('Saved designs','folder-open',self.show_library),('Surprise me','shuffle',self.surprise)]:
+            rows.append(MenuItem(title,icon=icon,on_activate=action))
+        rows.append(None)
+        if self.undo_stack: rows.append(MenuItem('Undo',icon='undo-2',on_activate=self.undo))
+        if self.redo_stack: rows.append(MenuItem('Redo',icon='redo-2',on_activate=self.redo))
+        rows.extend([MenuItem('Open recipe…',icon='folder-open',on_activate=self.import_recipe),
+            MenuItem('Save recipe…',icon='share-2',on_activate=self.share_recipe),MenuItem('Export history',icon='history',on_activate=self.show_history)])
+        return rows
 
     def rename(self):
         panel=self.panel_header('Name your design')
@@ -385,7 +379,7 @@ class Window(AppWindow):
             on_change=lambda text:self.change('name',text[:200]))
         self.name.entry.set_max_length(200)
         panel.append(self.name)
-        panel.append(PanelRow('Done',icon='check',on_activate=self.action_center.fold_panel))
+        panel.append(TextButton('Done',icon='check',small=True,style='fill',on_click=self.action_center.fold_panel))
         self.action_center.grow('rename',panel)
 
     def position_begin(self,gesture,x,y):
@@ -484,11 +478,6 @@ class Window(AppWindow):
             self.load_thumbnails([(tile,replace(self.design,effect=effect),160,90) for effect,tile in self.choice_buttons.items()])
         if self.creation_key=='colors': self.set_creation_content('colors',self.colors_panel())
         for key,row in self.parameter_rows.items(): row.set_visible(adjustment_visible(key,self.design.effect))
-        if self.creation_key=='adjust' and 'edge' in self.controls:
-            self.adjust_heading.set_label('Adjust '+self.design.effect.lower())
-            title='Roundness' if self.design.effect in ('Glow','Halo') else 'Edge shading'
-            field=self.controls['edge']; field.name_label.set_label(title)
-            field.range.update_property([Gtk.AccessibleProperty.LABEL],[title])
         if self.creation_key=='edit-colors': self.refresh_color_swatches()
         self.loading=False
 
@@ -513,7 +502,9 @@ class Window(AppWindow):
     def queue_preview(self):
         if self.closed: return
         self.revision+=1
-        self.document_title.set_title(self.design.name or 'Untitled',f'{self.width:,} × {self.height:,} · {self.design.effect}')
+        self.document_name.set_label(self.design.name or 'Untitled')
+        self.document_detail.set_label(f'{self.width:,} × {self.height:,} · {self.design.effect}')
+        self.document_info.update_property([Gtk.AccessibleProperty.LABEL],[f'{self.design.name}, {self.width} × {self.height}, {self.design.effect}'])
         if self.panel_key=='monitors': self.monitor_canvas.queue_draw()
         if not self.preview_timer: self.preview_timer=GLib.timeout_add(16,self.start_preview)
     def start_preview(self):
@@ -562,7 +553,7 @@ class Window(AppWindow):
         self.color_well.update_property([Gtk.AccessibleProperty.LABEL],['Selected palette color'])
         self.color_well.connect('changed',self.color_well_changed)
         panel.append(self.color_well)
-        panel.append(PanelRow('Choose a palette',icon='palette',submenu=True,on_activate=lambda:self.open_panel('colors')))
+        panel.append(TextButton('Choose palette',icon='palette',small=True,style='fill',on_click=lambda:self.open_panel('colors')))
         self.set_creation_content('edit-colors',panel)
         self.select_color(0)
 
@@ -593,7 +584,7 @@ class Window(AppWindow):
     def show_library(self):
         self.thumbnail_epoch+=1; self.thumbnail_jobs=[]
         panel=self.panel_header('Saved designs')
-        panel.append(PanelRow('Save a copy of this design',icon='plus',on_activate=self.save_copy))
+        panel.append(TextButton('Save a copy',icon='plus',style='fill',small=True,on_click=self.save_copy))
         rows=self.library.designs(); jobs=[]
         if not rows:
             panel.append(label('A place for your favorites. Save a design to return to it later.'))
@@ -641,18 +632,17 @@ class Window(AppWindow):
 
     def show_export(self):
         if self.exporting: self.show_export_progress(); return
-        panel=self.panel_header('Export wallpaper',f'{self.width:,} × {self.height:,} pixels · PNG')
-        self.export_depth=16
-        panel.append(PanelHeading('Color precision'))
-        panel.append(ModeSwitch([('8','8-bit'),('16','16-bit')],current='16',label='Color precision',
-            on_change=lambda value:setattr(self,'export_depth',int(value))))
+        panel=box(0); self.export_depth=16
+        precision=PropertyChoice('Color precision',[('8','8-bit'),('16','16-bit')],current='16',segments=True,
+            on_change=lambda value:setattr(self,'export_depth',int(value)))
         note=label('8-bit works everywhere. 16-bit keeps more detail in smooth gradients.')
-        apply_type(note,'caption'); panel.append(note)
-        panel.append(PanelRow('Export this wallpaper…',icon='download',on_activate=self.choose_export_location))
-        panel.append(PanelRow('Export a set of sizes…',icon='images',submenu=True,
-            on_activate=lambda:self.show_batch(self.export_depth==16)))
-        panel.append(PanelRow('Export for multiple displays…',icon='monitor',submenu=True,on_activate=self.show_monitors))
-        self.action_center.grow('export',panel)
+        apply_type(note,'caption')
+        panel.append(PropertySection('PNG export',precision,note))
+        actions=box(6)
+        for title,icon,callback in [('Export wallpaper…','download',self.choose_export_location),
+            ('Export a set…','images',lambda:self.show_batch(self.export_depth==16)),('Export for displays…','monitor',self.show_monitors)]:
+            actions.append(TextButton(title,icon=icon,style='fill',small=True,on_click=callback))
+        panel.append(PropertySection('Export',actions)); self.action_center.grow('export',panel)
 
     def choose_export_location(self):
         width,height=self.width,self.height; depth=self.export_depth
@@ -670,7 +660,7 @@ class Window(AppWindow):
         panel=self.panel_header('Exporting wallpaper','Keep designing while your wallpaper is saved.')
         self.export_bar=Gtk.ProgressBar(show_text=True)
         self.export_bar.set_fraction(getattr(self,'export_fraction',0)); panel.append(self.export_bar)
-        panel.append(PanelRow('Cancel export',icon='x',closes=False,on_activate=self.cancel_event.set))
+        panel.append(TextButton('Cancel export',icon='x',small=True,style='fill',on_click=self.cancel_event.set))
         self.action_center.grow('export-progress',panel)
 
     def show_batch(self,sixteen=True):
@@ -682,7 +672,7 @@ class Window(AppWindow):
             sizes=[(w,h) for c,w,h in checks if c.get_active()]
             if not sizes: self.error('Choose at least one wallpaper size.'); return
             self.choose_folder(lambda folder:self.export_set(folder,sizes,16 if sixteen else 8))
-        panel.append(PanelRow('Choose folder and export…',icon='share',on_activate=start))
+        panel.append(TextButton('Choose folder and export…',icon='share',style='fill',small=True,on_click=start))
         self.action_center.grow('batch',panel)
     def choose_folder(self,callback):
         chooser=Gtk.FileDialog(title='Choose export folder')
@@ -759,9 +749,8 @@ class Window(AppWindow):
                 for pair in ((('width','W',1),('height','H',1)),(('x','X',-32000),('y','Y',-32000))):
                     line=Gtk.Box(spacing=12)
                     for key,title,lo in pair:
-                        number=NumericField(title,unit='px',minimum=lo,maximum=32000)
-                        number.set_hexpand(True); number.entry.set_width_chars(5); number.entry.set_max_width_chars(5)
-                        number.entry.update_property([Gtk.AccessibleProperty.LABEL],[f'Display {i+1} {key}'])
+                        number=PropertyNumber(title,getattr(m,key),unit='px',minimum=lo,maximum=32000)
+                        number.set_hexpand(True); number.update_property([Gtk.AccessibleProperty.LABEL],[f'Display {i+1} {key}'])
                         number.set_value(getattr(m,key)); fields[(id(m),key)]=number
                         number.connect('value-changed',lambda _,v,k=key,monitor=m:update(monitor,k,v)); line.append(number)
                     group.append(line)
@@ -793,7 +782,7 @@ class Window(AppWindow):
         def add():
             if len(self.monitors)<8:
                 x=max(m.x+m.width for m in self.monitors); self.monitors.append(Monitor(x=x)); rebuild(); self.write_draft()
-        panel.append(PanelRow('Add display',icon='plus',closes=False,on_activate=add))
+        panel.append(TextButton('Add display',icon='plus',style='fill',small=True,on_click=add))
         panel.append(label('Pixel-based alignment. Adjust gaps manually for bezels or mixed display sizes.'))
         def layout_snapshot():
             layout=[replace(m) for m in self.monitors]; return layout,bounds(layout)
@@ -801,7 +790,7 @@ class Window(AppWindow):
             try: layout,(_,_,w,h)=layout_snapshot()
             except ValueError as e: self.error(str(e)); return
             self.set_canvas(w,h); self.write_draft(); self.action_center.fold_panel()
-        panel.append(PanelRow('Use this wallpaper size',icon='check',on_activate=apply))
+        panel.append(TextButton('Use this wallpaper size',icon='check',style='fill',small=True,on_click=apply))
         def start():
             try: layout,(x,y,w,h)=layout_snapshot()
             except ValueError as e: self.error(str(e)); return
@@ -812,7 +801,7 @@ class Window(AppWindow):
                 jobs += [(str(folder/f'display-{i+1}.png'),m.width,m.height,(m.x-x,m.y-y,w,h)) for i,m in enumerate(layout)]
                 self.run_exports(jobs,16)
             self.choose_folder(export)
-        panel.append(PanelRow('Export wallpapers for all displays…',icon='share',on_activate=start))
+        panel.append(TextButton('Export display wallpapers…',icon='share',style='fill',small=True,on_click=start))
         self.action_center.grow('monitors',panel)
 
     def run_exports(self,jobs,depth,design=None):

@@ -15,7 +15,7 @@ report={}; frames=[]; errors=[]
 
 
 def panel_row(win,label):
-    from luma_appkit import PanelRow
+    from luma_appkit import PanelRow, TextButton
     def descendants(widget):
         yield widget
         child=widget.get_first_child()
@@ -23,7 +23,27 @@ def panel_row(win,label):
             yield from descendants(child)
             child=child.get_next_sibling()
     return next(widget for widget in descendants(win.action_center.panel)
-                if isinstance(widget,PanelRow) and widget.label==label)
+                if (isinstance(widget,PanelRow) and widget.label==label) or
+                   (isinstance(widget,TextButton) and widget.label_widget.get_text()==label))
+
+
+def descendants(widget):
+    yield widget
+    child=widget.get_first_child()
+    while child:
+        yield from descendants(child); child=child.get_next_sibling()
+
+def number_entry(field):
+    return next(w for w in descendants(field) if isinstance(w,(Gtk.Entry,Gtk.Text)))
+
+def number_key(field,key):
+    for widget in descendants(field):
+        controllers=widget.observe_controllers()
+        for i in range(controllers.get_n_items()):
+            controller=controllers.get_item(i)
+            if isinstance(controller,Gtk.EventControllerKey):
+                if controller.emit('key-pressed',key,0,Gdk.ModifierType(0)): return
+    raise AssertionError('Native numeric keyboard controller did not handle input')
 
 
 def capture(win,name):
@@ -69,7 +89,7 @@ def start():
     assert len(win.choice_buttons)==7
     report['visual_style_choices']='passed'
     win.action_center.fold_panel(); win.open_panel('colors')
-    win.choice_buttons['Meadow'].emit('clicked')
+    win.palette_picker.set_current('Meadow'); win.palette_picker.emit('changed','Meadow')
     assert win.design.colors==PALETTES['Meadow'] and win.design.palette=='Meadow'
     win.edit_colors(); later(colors); return False
 
@@ -88,13 +108,13 @@ def colors():
     win.action_center.fold_panel(); win.open_panel('adjust')
     win.open_panel('size')
     win.canvas_width.entry.set_text('2560 * 2'); win.canvas_height.entry.set_text('1440')
-    panel_row(win,'Apply dimensions').emit('clicked')
+    win.apply_dimensions()
     assert (win.width,win.height)==(5120,1440)
     win.open_panel('adjust')
     assert win.creation.get_visible() and win.action_center.grown is None
     report['sidebar_and_custom_dimensions']='passed'
     win.numeric_change('angle',45); assert win.design.angle==45
-    win.numeric_change('angle',0); assert win.controls['angle'].value==0
+    win.numeric_change('angle',0); assert win.controls['angle'].get_value()==0
     win.save(); saved_id=win.design_id; saved_count=len(win.library.designs())
     app.activate_action('design-save',None)
     assert win.design_id==saved_id and len(win.library.designs())==saved_count
@@ -107,7 +127,7 @@ def colors():
     win.begin_gesture(); start_time=time.monotonic(); steps=[0]
     @guard
     def drag():
-        steps[0]+=1; win.controls['angle'].range.set_value(-40+steps[0],notify=True)
+        steps[0]+=1; number_key(win.controls['angle'],Gdk.KEY_Up)
         if steps[0]<80:return True
         win.end_gesture(); duration=time.monotonic()-start_time
         report['live_drag']={'updates':steps[0],'frames_before_release':len(frames),'seconds':round(duration,3)}
@@ -191,12 +211,12 @@ def monitors():
     first=win.monitors[0]
     for key,value in (('width',3840),('height',2160)):
         field=win.monitor_fields[(id(first),key)]
-        field.entry.set_text(str(value)); field.entry.emit('activate')
+        number_entry(field).set_text(str(value)); number_entry(field).emit('activate')
         assert getattr(first,key)==value
     second=win.monitors[1]
     for key,value in (('width',1920),('height',1080),('x',-1920),('y',120)):
         field=win.monitor_fields[(id(second),key)]
-        field.entry.set_text(str(value)); field.entry.emit('activate')
+        number_entry(field).set_text(str(value)); number_entry(field).emit('activate')
         assert getattr(second,key)==value
     capture(win,'monitor-arrangement')
     panel_row(win,'Use this wallpaper size').emit('clicked')
@@ -241,12 +261,9 @@ def rtl():
     preview_ok,preview_bounds=win.preview_host.compute_bounds(win.host)
     assert ok and preview_ok and preview_bounds.get_x()>=panel_bounds.get_x()+panel_bounds.get_width(),'Preview overlaps native left panel in RTL'
     # Native range keyboard controller: arrows change the value; Esc folds the bar.
-    slider=win.controls['angle']; old=slider.value
-    controllers=slider.range.observe_controllers()
-    keys=[controllers.get_item(i) for i in range(controllers.get_n_items())
-          if isinstance(controllers.get_item(i),Gtk.EventControllerKey)]
-    for key in keys: key.emit('key-pressed',Gdk.KEY_Right,0,Gdk.ModifierType(0))
-    assert slider.value!=old
+    slider=win.controls['angle']; old=slider.get_value()
+    number_key(slider,Gdk.KEY_Up)
+    assert slider.get_value()!=old
     bar_keys=win.action_center.bar.observe_controllers()
     for i in range(bar_keys.get_n_items()):
         key=bar_keys.get_item(i)
@@ -254,6 +271,18 @@ def rtl():
     assert win.action_center.grown is None
     report['keyboard_range_escape']='passed'
     report['appearance_modes']=['dark','light','RTL / 125% text / animations disabled']
+    win.bar_anchor('more').emit('clicked')
+    later(more_menu_check)
+    return False
+
+@guard
+def more_menu_check():
+    win=app.get_active_window()
+    from luma_appkit.action_bubble import FloatingMenu
+    menus=[w for w in descendants(win) if isinstance(w,FloatingMenu) and w.get_visible()]
+    assert menus,'Native More menu did not open'
+    capture(win,'more-menu'); menus[0].close()
+    report['native_more_menu']='passed'
     finish(); return False
 
 app.connect('activate',lambda *_:later(start,1200))

@@ -48,10 +48,11 @@ def next_width():
         capture(win,f'window-{width}')
         assert win.get_width()==width, f'Requested usable width {width}, got {win.get_width()}'
         assert win.picture.get_paintable() is not None
+        win.design.name='Long wallpaper name ' * 8; win.queue_preview()
         assert win.compact==(width<=500)
         assert win.workspace.__gtype__.name=='LumaCreativeWorkspace'
         assert win.creation.__gtype__.name=='LumaFloatingPanel'
-        panels=iter(['style','colors','adjust','size','size-presets','custom-colors','batch','monitors','export'])
+        panels=iter(['style','colors','adjust','size','size-presets','custom-colors','batch','monitors','export','library','history','rename'])
         record={'requested_width':width,'actual_width':win.get_width(),'preview':True,'panels':[]}
         report.append(record)
         @guard
@@ -65,6 +66,9 @@ def next_width():
             elif key=='batch': win.show_batch()
             elif key=='monitors': win.show_monitors()
             elif key=='export': win.show_export()
+            elif key=='library': win.save(); win.show_library()
+            elif key=='history': win.show_history()
+            elif key=='rename': win.rename()
             else: win.open_panel(key)
             @guard
             def inspect():
@@ -75,14 +79,14 @@ def next_width():
                 if key in ('style','colors','adjust','custom-colors'):
                     assert win.creation.get_visible() and win.creation_pages[win.creation.get_page()].get_first_child() is not None
                     assert win.action_center.grown is None
-                else: assert win.action_center.panel.get_child() is not None
+                else:
+                    assert win.action_center.panel.get_child() is not None
+                    ok,image_bounds=win.picture.compute_bounds(win.host)
+                    panel_ok,output_bounds=win.action_center.panel.compute_bounds(win.host)
+                    assert ok and panel_ok and image_bounds.get_y()+image_bounds.get_height()<=output_bounds.get_y(),'Output panel covers wallpaper preview'
                 if win.action_center.get_visible():
                     ok,bounds=win.action_center.bar.compute_bounds(win.host)
                     assert ok and bounds.get_y()+bounds.get_height()<=win.host.get_height()-16,'Bottom bar clearance lost'
-                if win.compact and win.creation.get_folded() and win.document_title.get_visible():
-                    ok,panel_bounds=win.creation.compute_bounds(win.host)
-                    title_ok,title_bounds=win.document_title.compute_bounds(win.host)
-                    assert ok and title_ok and title_bounds.get_y()>=panel_bounds.get_y()+panel_bounds.get_height(),'Document title overlaps folded creation header'
                 if not win.compact:
                     from luma_appkit.lumaui_tokens import CREATIVE
                     assert win.creation.get_width()<=CREATIVE['panel_left_width']+2*CREATIVE['panel_inset']
