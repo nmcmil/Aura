@@ -124,12 +124,19 @@ def colors():
     def counted_finish(*args):
         frames.append(time.monotonic()); return original_finish(*args)
     win.finish_preview=counted_finish
-    win.begin_gesture(); start_time=time.monotonic(); steps=[0]
+    drag_controller=next(controller for widget in descendants(win.controls['angle'])
+        for controller in [widget.observe_controllers().get_item(i) for i in range(widget.observe_controllers().get_n_items())]
+        if isinstance(controller,Gtk.GestureDrag))
+    undo_before=len(win.undo_stack)
+    drag_controller.emit('drag-begin',0.0,0.0)
+    start_time=time.monotonic(); steps=[0]
     @guard
     def drag():
-        steps[0]+=1; number_key(win.controls['angle'],Gdk.KEY_Up)
+        steps[0]+=1; drag_controller.emit('drag-update',2.0*steps[0],0.0)
         if steps[0]<80:return True
-        win.end_gesture(); duration=time.monotonic()-start_time
+        drag_controller.emit('drag-end',2.0*steps[0],0.0)
+        assert len(win.undo_stack)==undo_before+1 and not win.gesture_active,'Native scrub must be one undo step'
+        duration=time.monotonic()-start_time
         report['live_drag']={'updates':steps[0],'frames_before_release':len(frames),'seconds':round(duration,3)}
         assert len(frames)>10,'Preview starved during continuous input'
         later(position); return False

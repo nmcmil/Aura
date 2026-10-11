@@ -331,6 +331,15 @@ class Window(AppWindow):
             gesture=Gtk.GestureClick(); gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
             gesture.connect('pressed',lambda *_:self.begin_gesture())
             gesture.connect('released',lambda *_:self.end_gesture()); field.add_controller(gesture)
+            child=field.get_first_child()
+            while child:
+                controllers=child.observe_controllers()
+                for i in range(controllers.get_n_items()):
+                    controller=controllers.get_item(i)
+                    if isinstance(controller,Gtk.GestureDrag):
+                        controller.connect('drag-begin',lambda *_:self.begin_gesture())
+                        controller.connect('drag-end',lambda *_:self.end_gesture())
+                child=child.get_next_sibling()
             self.controls[key]=field; self.number_fields[key]=(field,factor); self.parameter_rows[key]=field
             field.set_visible(adjustment_visible(key,self.design.effect)); pages[page].append(field)
         for key,page in pages.items(): self.adjust_stack.add_named(page,key)
