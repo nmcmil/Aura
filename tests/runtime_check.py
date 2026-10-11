@@ -1,51 +1,95 @@
-"""Run inside a Luma Wayland session with isolated XDG data/state directories."""
+"""Native rendered layout gates; run with disposable XDG data/state."""
 import json
 import os
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from aura.app import Application, Window
-from gi.repository import Gtk, Gio, GLib, Adw
+from aura.app import Application
+from gi.repository import Gtk, GLib
 
 out=Path(os.environ.get('AURA_EVIDENCE','/tmp/aura-evidence')); out.mkdir(parents=True,exist_ok=True)
 app=Application(); app.set_application_id('io.github.nmcmil.Aura.Verification')
 report=[]; errors=[]
 widths=iter([1180,1024,500,360])
 
-def capture(win,name):
-    paintable=Gtk.WidgetPaintable.new(win)
-    snapshot=Gtk.Snapshot.new()
-    paintable.snapshot(snapshot,win.get_width(),win.get_height())
-    node=snapshot.to_node()
-    texture=win.get_renderer().render_texture(node,None)
-    texture.save_to_png(str(out/f'{name}.png'))
 
+def capture(win,name):
+    snapshot=Gtk.Snapshot.new()
+    Gtk.WidgetPaintable.new(win).snapshot(snapshot,win.get_width(),win.get_height())
+    node=snapshot.to_node()
+    assert node is not None,'No rendered GTK frame'
+    win.get_renderer().render_texture(node,None).save_to_png(str(out/f'{name}.png'))
+
+
+def fit(win,width,height=760):
+    # GTK's configured surface includes the toolkit's external shadow; test usable widget width.
+    surface=win.get_surface()
+    dx=surface.get_width()-win.get_width(); dy=surface.get_height()-win.get_height()
+    win.set_default_size(width+dx,height+dy)
+
+
+def guard(fn):
+    def run():
+        try: return fn()
+        except Exception as e:
+            import traceback; traceback.print_exc(); errors.append(str(e)); app.quit(); return False
+    return run
+
+
+@guard
 def next_width():
-    win=app.get_active_window()
+    win=app.get_active_window(); win.action_center.fold_panel()
     try: width=next(widths)
     except StopIteration:
-        print(json.dumps(report),flush=True)
-        (out/'runtime.json').write_text(json.dumps(report,indent=2)); app.quit(); return False
-    win.set_default_size(width,760)
+        GLib.timeout_add(300,short_window); return False
+    fit(win,width)
+    @guard
     def check():
-        try:
-            capture(win,f'window-{width}')
-            report.append({'requested_width':width,'actual_width':win.get_width(),'collapsed':win.compact,'preview':win.picture.get_paintable() is not None})
-            assert win.get_width() == width, 'Window did not reach the requested width'
-            assert win.picture.get_paintable() is not None, 'Preview was not rendered'
-            assert win.compact == (width <= 500), 'Unexpected responsive layout'
-            if width<=500:
-                win.show_editor(True)
-                def inspector():
-                    capture(win,f'inspector-{width}'); win.show_editor(False); GLib.timeout_add(400,next_width); return False
-                GLib.timeout_add(600,inspector)
-            else: GLib.timeout_add(200,next_width)
-        except Exception as e:
-            import traceback; traceback.print_exc(); errors.append(str(e)); app.quit()
-        return False
-    GLib.timeout_add(1300,check); return False
+        capture(win,f'window-{width}')
+        assert win.get_width()==width, f'Requested usable width {width}, got {win.get_width()}'
+        assert win.picture.get_paintable() is not None
+        assert win.compact==(width<=500)
+        panels=iter(['style','colors','adjust','size','custom-colors','batch','monitors','export'])
+        record={'requested_width':width,'actual_width':win.get_width(),'preview':True,'panels':[]}
+        report.append(record)
+        @guard
+        def next_panel():
+            win.action_center.fold_panel()
+            try: key=next(panels)
+            except StopIteration:
+                GLib.timeout_add(200,next_width); return False
+            if key=='custom-colors': win.edit_colors()
+            elif key=='batch': win.show_batch()
+            elif key=='monitors': win.show_monitors()
+            elif key=='export': win.show_export()
+            else: win.open_panel(key)
+            @guard
+            def inspect():
+                capture(win,f'{key}-{width}')
+                assert win.picture.get_visible() and win.picture.get_height()>60,'Live preview lost while editing'
+                assert win.action_center.get_width()<=win.host.get_width(),'Bar clips beyond its host'
+                assert win.action_center.panel.get_child() is not None
+                record['panels'].append({'name':key,'preview_height':win.picture.get_height(),'bar_width':win.action_center.get_width()})
+                GLib.timeout_add(80,next_panel); return False
+            GLib.timeout_add(550,inspect); return False
+        next_panel(); return False
+    GLib.timeout_add(800,check); return False
 
-def ready(*_): GLib.timeout_add(2000,next_width)
-app.connect('activate',ready)
+
+@guard
+def short_window():
+    win=app.get_active_window(); fit(win,360,420)
+    win.open_panel('adjust')
+    @guard
+    def check_short():
+        capture(win,'adjust-360-short')
+        assert win.short and win.picture.get_height()>60
+        assert win.action_center.get_width()<=win.host.get_width()
+        report.append({'width':win.get_width(),'height':win.get_height(),'preview_height':win.picture.get_height(),'short':True})
+        (out/'runtime.json').write_text(json.dumps(report,indent=2)); print(json.dumps(report),flush=True)
+        app.quit(); return False
+    GLib.timeout_add(750,check_short); return False
+
+app.connect('activate',lambda *_:GLib.timeout_add(1200,next_width))
 app.run(None)
 if errors: sys.exit(1)

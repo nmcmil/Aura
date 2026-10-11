@@ -1,4 +1,4 @@
-"""Actual GTK interactions, continuous preview and background export smoke."""
+"""Real native controls, live preview, legacy-compatible persistence and background export."""
 import json
 import os
 from pathlib import Path
@@ -6,54 +6,94 @@ import sys
 import time
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from aura.app import Application
-from aura.model import Monitor
+from aura.model import EFFECTS, PALETTES, Design
 from gi.repository import GLib, Gtk, Adw, Gdk
 
-out=Path(os.environ.get('AURA_EVIDENCE','/tmp/aura-interaction-evidence')); out.mkdir(parents=True,exist_ok=True)
+out=Path(os.environ.get('AURA_EVIDENCE','/tmp/aura-interactions')); out.mkdir(parents=True,exist_ok=True)
 app=Application(); app.set_application_id('io.github.nmcmil.Aura.InteractionVerification')
 report={}; frames=[]; errors=[]
+
+
+def panel_row(win,label):
+    from luma_appkit import PanelRow
+    def descendants(widget):
+        yield widget
+        child=widget.get_first_child()
+        while child:
+            yield from descendants(child)
+            child=child.get_next_sibling()
+    return next(widget for widget in descendants(win.action_center.panel)
+                if isinstance(widget,PanelRow) and widget.label==label)
+
+
 def capture(win,name):
-    paintable=Gtk.WidgetPaintable.new(win)
-    win.queue_draw()
-    deadline=time.monotonic()+1
+    win.queue_draw(); deadline=time.monotonic()+1
     while time.monotonic()<deadline:
         context=GLib.MainContext.default()
         while context.pending(): context.iteration(False)
         snapshot=Gtk.Snapshot.new()
-        paintable.snapshot(snapshot,win.get_width(),win.get_height())
+        Gtk.WidgetPaintable.new(win).snapshot(snapshot,win.get_width(),win.get_height())
         node=snapshot.to_node()
         if node is not None:
-            win.get_renderer().render_texture(node,None).save_to_png(str(out/(name+'.png')))
+            win.get_renderer().render_texture(node,None).save_to_png(str(out/f'{name}.png'))
             return
         time.sleep(.01)
-    raise AssertionError(f'No rendered frame available for {name}')
+    raise AssertionError('No rendered GTK frame for '+name)
+
+
+def finish():
+    report['errors']=errors
+    (out/'interactions.json').write_text(json.dumps(report,indent=2)); print(json.dumps(report),flush=True)
+    app.quit(); return False
+
+
 def guard(fn):
     def wrapped(*args):
         try: return fn(*args)
         except Exception as e:
-            import traceback; traceback.print_exc(); errors.append(str(e)); finish(); return False
+            import traceback; traceback.print_exc(); errors.append(str(e)); return finish()
     return wrapped
 
-def close_dialogs(win):
-    for d in list(win.get_dialogs()): d.close()
 
-def finish():
-    report['errors']=errors
-    (out/'interactions.json').write_text(json.dumps(report,indent=2)); print(json.dumps(report),flush=True); app.quit(); return False
+def later(callback,ms=450): GLib.timeout_add(ms,guard(callback))
+
 
 @guard
 def start():
-    win=app.get_active_window(); win.set_default_size(1180,780)
-    win.set_canvas(5120,1440); assert (win.width,win.height)==(5120,1440)
-    win.numeric_change('angle',45); assert win.design.angle==45
-    win.numeric_change('angle',0); assert win.controls['angle'].get_value()==0
-    rgba=Gdk.RGBA(); rgba.parse('#19b8ca'); win.set_color(1,rgba)
+    win=app.get_active_window()
+    win.open_panel('style')
+    for effect in EFFECTS:
+        # Exercise the native media tile activation and selected state.
+        win.choice_buttons[effect].on_activate()
+        assert win.design.effect==effect and win.choice_buttons[effect].selected
+    assert len(win.choice_buttons)==7
+    report['visual_style_choices']='passed'
+    win.action_center.fold_panel(); win.open_panel('colors')
+    win.choice_buttons['Meadow'].emit('clicked')
+    assert win.design.colors==PALETTES['Meadow'] and win.design.palette=='Meadow'
+    win.edit_colors(); later(colors); return False
+
+
+@guard
+def colors():
+    win=app.get_active_window()
+    win.color_swatches[1].emit('clicked')
+    rgba=Gdk.RGBA(); rgba.parse('#19b8ca')
+    win.color_well.set_rgba(rgba)
     assert win.design.colors[1]=='#19b8ca' and win.design.palette=='Custom'
-    win.save(); assert win.library.designs()
-    saved_id=win.design_id; saved_count=len(win.library.designs())
-    win.save()
+    win.reverse_palette(); assert win.design.colors[-2]=='#19b8ca'
+    win.undo(); assert win.design.colors[1]=='#19b8ca'
+    report['palette_custom_color_reverse_undo']='passed'
+    capture(win,'custom-colors')
+    win.action_center.fold_panel(); win.open_panel('adjust')
+    win.set_canvas(5120,1440)
+    win.numeric_change('angle',45); assert win.design.angle==45
+    win.numeric_change('angle',0); assert win.controls['angle'].value==0
+    win.save(); saved_id=win.design_id; saved_count=len(win.library.designs())
+    app.activate_action('design-save',None)
     assert win.design_id==saved_id and len(win.library.designs())==saved_count
-    report['save_and_update']='passed'
+    assert app.get_accels_for_action('app.design-save')
+    report['save_shortcut_and_update']='passed'
     original_finish=win.finish_preview
     def counted_finish(*args):
         frames.append(time.monotonic()); return original_finish(*args)
@@ -61,55 +101,141 @@ def start():
     win.begin_gesture(); start_time=time.monotonic(); steps=[0]
     @guard
     def drag():
-        steps[0]+=1; win.controls['angle'].set_value(-40+steps[0])
-        if steps[0]<80: return True
+        steps[0]+=1; win.controls['angle'].range.set_value(-40+steps[0],notify=True)
+        if steps[0]<80:return True
         win.end_gesture(); duration=time.monotonic()-start_time
-        report['live_drag']={'updates':steps[0],'frames_before_release':len(frames),'seconds':round(duration,3),'fps':round(len(frames)/duration,1)}
-        assert len(frames)>10, 'Live preview did not update during continuous input'
-        win.numeric_change('angle',0)
-        GLib.timeout_add(800,dialogs); return False
+        report['live_drag']={'updates':steps[0],'frames_before_release':len(frames),'seconds':round(duration,3)}
+        assert len(frames)>10,'Preview starved during continuous input'
+        later(position); return False
     GLib.timeout_add(25,drag); return False
 
+
 @guard
-def dialogs():
-    win=app.get_active_window(); capture(win,'workspace-ultrawide')
-    win.show_monitors()
-    def monitors():
-        capture(win,'monitors'); close_dialogs(win); win.edit_colors(); GLib.timeout_add(500,colors); return False
-    GLib.timeout_add(500,guard(monitors)); return False
-@guard
-def colors():
-    win=app.get_active_window(); capture(win,'palette'); close_dialogs(win); win.show_export(); GLib.timeout_add(500,export_options); return False
+def position():
+    win=app.get_active_window(); before=win.design.to_dict(); undo_count=len(win.undo_stack)
+    # Emit the actual pointer gesture over the rendered image's center.
+    x,y=win.picture.get_width()/2,win.picture.get_height()/2
+    win.position_drag.emit('drag-begin',x,y)
+    win.position_drag.emit('drag-update',24.0,12.0)
+    win.position_drag.emit('drag-end',24.0,12.0)
+    assert len(win.undo_stack)==undo_count+1
+    assert win.design.center_x>.5 and win.design.center_y>.5
+    app.activate_action('design-undo',None); assert win.design.to_dict()==before
+    app.activate_action('design-redo',None); assert win.design.center_x>.5
+    report['pointer_position_and_keyboard_undo_redo']='passed'
+    win.select_adjust_page('finish'); later(export_options)
+
+
 @guard
 def export_options():
-    win=app.get_active_window(); capture(win,'export'); close_dialogs(win)
-    win.run_exports([(str(out/'actual-export.png'),1024,288,None)],16)
-    GLib.timeout_add(100,export_poll); return False
+    win=app.get_active_window(); capture(win,'finish-adjustments')
+    win.show_export(); later(export_start)
+
+
 @guard
-def export_poll():
+def export_start():
+    win=app.get_active_window(); capture(win,'export-options')
+    win.run_exports([(str(out/'actual-export.png'),1024,288,None)],16)
+    later(export_finished,100)
+
+
+@guard
+def export_finished():
     win=app.get_active_window()
-    if win.exporting: return True
-    assert (out/'actual-export.png').exists(); assert win.library.exports()
-    report['background_export_and_history']='passed'; close_dialogs(win)
-    win.show_library(); GLib.timeout_add(500,library); return False
+    if win.exporting: later(export_finished,100); return False
+    assert (out/'actual-export.png').exists() and win.library.exports()
+    report['background_export_and_history']='passed'
+    # Exercise cancellation through the actual progress panel before any replacement.
+    win.cancel_target=out/'cancelled.png'; win.cancel_target.write_bytes(b'previous wallpaper')
+    win.run_exports([(str(win.cancel_target),2048,2048,None)],16)
+    assert win.close_requested() is True,'Closing must preserve the active export'
+    panel_row(win,'Cancel export').emit('clicked')
+    later(cancelled,100)
+
+
+@guard
+def cancelled():
+    win=app.get_active_window()
+    if win.exporting: later(cancelled,100); return False
+    assert win.cancel_target.read_bytes()==b'previous wallpaper'
+    assert not list(out.glob('.aura-*.part'))
+    report['cancel_preserves_destination']='passed'
+    win.show_library(); later(library)
+
+
 @guard
 def library():
-    win=app.get_active_window(); capture(win,'library'); close_dialogs(win)
+    win=app.get_active_window(); capture(win,'saved-designs')
+    stored_id,stored,_=win.library.designs()[0]
+    panel_row(win,stored.name or 'Untitled').emit('clicked')
+    assert win.design_id==stored_id and win.design.to_dict()==stored.to_dict()
+    assert not win.undo_stack,'Undo history crossed a saved-document boundary'
+    app.activate_action('design-save',None)
+    assert len(win.library.designs())==1
+    report['library_open_document_boundary']='passed'
+    win.show_monitors(); later(monitors)
+
+
+@guard
+def monitors():
+    win=app.get_active_window()
+    panel_row(win,'Add display').emit('clicked')
+    assert len(win.monitors)==2
+    second=win.monitors[1]
+    for key,value in (('width',1920),('height',1080),('x',-1920),('y',120)):
+        field=win.monitor_fields[(id(second),key)]
+        field.entry.set_text(str(value)); field.entry.emit('activate')
+        assert getattr(second,key)==value
+    capture(win,'monitor-arrangement')
+    panel_row(win,'Use this wallpaper size').emit('clicked')
+    assert (win.width,win.height)==(5760,2160)
+    report['monitor_exact_fields_and_apply']='passed'
+    win.show_history(); later(history)
+
+
+@guard
+def history():
+    win=app.get_active_window(); capture(win,'export-history')
+    win.action_center.fold_panel()
+    Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_DARK)
+    later(dark)
+
+
+@guard
+def dark():
+    win=app.get_active_window(); capture(win,'dark')
     Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_LIGHT)
-    GLib.timeout_add(600,light); return False
+    later(light)
+
+
 @guard
 def light():
     win=app.get_active_window(); capture(win,'light')
     settings=Gtk.Settings.get_default(); settings.set_property('gtk-enable-animations',False)
     settings.set_property('gtk-xft-dpi',int(96*1024*1.25))
     win.set_direction(Gtk.TextDirection.RTL)
-    report['keyboard_save_shortcut']=app.get_accels_for_action('app.design-save')
-    GLib.timeout_add(600,rtl); return False
+    win.open_panel('adjust'); later(rtl)
+
+
 @guard
 def rtl():
     win=app.get_active_window(); capture(win,'rtl-large-text')
-    report['appearance_modes']=['dark','light','RTL with 125% text and animations disabled']
+    # Native range keyboard controller: arrows change the value; Esc folds the bar.
+    slider=win.controls['angle']; old=slider.value
+    controllers=slider.range.observe_controllers()
+    keys=[controllers.get_item(i) for i in range(controllers.get_n_items())
+          if isinstance(controllers.get_item(i),Gtk.EventControllerKey)]
+    for key in keys: key.emit('key-pressed',Gdk.KEY_Right,0,Gdk.ModifierType(0))
+    assert slider.value!=old
+    bar_keys=win.action_center.bar.observe_controllers()
+    for i in range(bar_keys.get_n_items()):
+        key=bar_keys.get_item(i)
+        if isinstance(key,Gtk.EventControllerKey): key.emit('key-pressed',Gdk.KEY_Escape,0,Gdk.ModifierType(0))
+    assert win.action_center.grown is None
+    report['keyboard_range_escape']='passed'
+    report['appearance_modes']=['dark','light','RTL / 125% text / animations disabled']
     finish(); return False
-app.connect('activate',lambda *_:GLib.timeout_add(1200,start))
+
+app.connect('activate',lambda *_:later(start,1200))
 app.run(None)
 if errors: sys.exit(1)
