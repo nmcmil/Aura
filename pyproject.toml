@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aura-wallpaper"
+version = "0.1.0"
+description = "A native wallpaper studio for Luma with a standalone procedural PNG renderer"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.24,<3"]
+keywords = ["wallpaper", "procedural", "gtk", "luma"]
+
+[project.urls]
+Repository = "https://github.com/nmcmil/Aura"
+Issues = "https://github.com/nmcmil/Aura/issues"
+
+[project.scripts]
+aura = "aura.__main__:main"
+
+[tool.setuptools]
+packages = ["aura"]

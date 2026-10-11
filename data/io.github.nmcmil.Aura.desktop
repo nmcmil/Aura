@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Aura
+Comment=A playground for beautiful wallpapers
+Exec=aura
+Icon=io.github.nmcmil.Aura
+Terminal=false
+Categories=Graphics;2DGraphics;
+StartupNotify=true
