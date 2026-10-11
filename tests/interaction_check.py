@@ -171,7 +171,7 @@ def position():
     app.activate_action('design-undo',None); assert win.design.to_dict()==before
     app.activate_action('design-redo',None); assert win.design.center_x>.5
     report['pointer_position_and_keyboard_undo_redo']='passed'
-    win.select_adjust_page('finish'); later(export_options)
+    later(export_options)
 
 
 @guard

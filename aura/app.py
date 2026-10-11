@@ -95,7 +95,7 @@ class Window(AppWindow):
         self.width,self.height=3840,2160; self.monitors=[Monitor()]
         self.controls={}; self.number_fields={}; self.parameter_rows={}; self.choice_buttons={}
         self.compact=False; self.gesture_active=False; self.gesture_checkpoint=False
-        self.adjust_page='shape'; self.panel_key=None; self.creation_key=None; self.short=False
+        self.panel_key=None; self.creation_key=None; self.short=False
         self.commands=CommandRegistry([
             CommandGroup('Design',(
                 Command('design.surprise','Surprise me',self.surprise,shortcut=('Ctrl','N')),
@@ -367,12 +367,7 @@ class Window(AppWindow):
         self.set_creation_content('colors',self.colors_panel())
 
     def adjust_panel(self):
-        panel=box(0); self.adjust_stack=Gtk.Stack(transition_type=Gtk.StackTransitionType.NONE)
-        self.adjust_stack.set_vhomogeneous(False)
-        tabs=PropertyChoice('Adjustment',[(key,title) for key,title in (('shape','Shape'),('position','Position'),('finish','Finish'))],
-            current=self.adjust_page,segments=True,on_change=self.select_adjust_page)
-        self.adjust_tabs=tabs
-        panel.append(PropertySection('Adjust',tabs))
+        panel=box(0)
         pages={key:PropertySection(title) for key,title in (('shape','Shape'),('position','Position'),('finish','Finish'))}
         for key,title,lo,hi,step,unit,factor,page in ADJUSTMENTS:
             if key=='edge' and self.design.effect not in ('Glow','Halo'): title='Edge shading'
@@ -393,14 +388,9 @@ class Window(AppWindow):
                 child=child.get_next_sibling()
             self.controls[key]=field; self.number_fields[key]=(field,factor); self.parameter_rows[key]=field
             field.set_visible(adjustment_visible(key,self.design.effect)); pages[page].append(field)
-        for key,page in pages.items(): self.adjust_stack.add_named(page,key)
-        self.adjust_stack.set_visible_child_name(self.adjust_page); panel.append(self.adjust_stack)
+        for section in pages.values(): panel.append(section)
         panel.append(PropertySection('Defaults',TextButton('Reset adjustments',icon='rotate-ccw',style='fill',small=True,on_click=self.reset_adjustments)))
         return panel
-
-    def select_adjust_page(self,key):
-        self.adjust_page=key; self.adjust_stack.set_visible_child_name(key)
-        if self.adjust_tabs.get_current()!=key: self.adjust_tabs.set_current(key)
 
     def make_canvas_controls(self):
         panel=box(0)

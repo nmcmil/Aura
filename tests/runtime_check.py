@@ -76,6 +76,11 @@ def next_width():
                 assert win.canvas_stack.get_height()>60,'Live canvas lost while editing'
                 if win.action_center.get_visible():
                     assert win.action_center.get_width()<=win.host.get_width(),'Bar clips beyond its host'
+                if key=='adjust':
+                    sections=[win.controls[name].get_parent() for name in ('angle','center_x','grain')]
+                    assert len(set(sections))==3
+                    assert all(section.get_parent() is sections[0].get_parent() for section in sections), 'Adjustments must share one column'
+                    assert all(section.get_visible() for section in sections)
                 if key in ('style','colors','adjust','custom-colors'):
                     assert win.creation.get_visible() and win.creation_pages[win.creation.get_page()].get_first_child() is not None
                     assert win.action_center.grown is None
