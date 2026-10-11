@@ -225,6 +225,7 @@ def zoom():
     assert win.canvas_width.label.get_text()=='Width'
     before=win.design.to_dict(); dimensions=(win.width,win.height); revision=win.revision
     app.activate_action('view-zoom-in',None); assert win.zoom_preview.zoom==1.25
+    capture(win,'wallpaper-zoom-125')
     app.activate_action('view-zoom-out',None); assert win.zoom_preview.zoom==1
     app.activate_action('view-zoom-in',None); app.activate_action('view-zoom-reset',None)
     assert win.zoom_preview.zoom==1

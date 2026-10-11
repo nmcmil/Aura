@@ -73,8 +73,6 @@ def next_width():
             @guard
             def inspect():
                 capture(win,f'{key}-{width}')
-                if key=='style' and width==1180:
-                    win.set_zoom(2); capture(win,'wallpaper-zoom-200'); win.set_zoom(1)
                 assert win.canvas_stack.get_height()>60,'Live canvas lost while editing'
                 if win.action_center.get_visible():
                     assert win.action_center.get_width()<=win.host.get_width(),'Bar clips beyond its host'
