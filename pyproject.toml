@@ -20,3 +20,6 @@ aura = "aura.__main__:main"
 
 [tool.setuptools]
 packages = ["aura"]
+
+[tool.setuptools.data-files]
+"share/icons/hicolor/scalable/apps" = ["data/io.github.nmcmil.Aura.svg"]
