@@ -5,3 +5,4 @@ recursive-include scripts *.sh
 recursive-include tests *.py
 recursive-include packaging *.json aura-launcher
 recursive-include scripts *.py
+include docs/images/aura.png
