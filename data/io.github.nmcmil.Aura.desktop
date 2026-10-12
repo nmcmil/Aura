@@ -7,3 +7,4 @@ Icon=io.github.nmcmil.Aura
 Terminal=false
 Categories=Graphics;2DGraphics;
 StartupNotify=true
+StartupWMClass=io.github.nmcmil.Aura
