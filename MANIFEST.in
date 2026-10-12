@@ -6,3 +6,4 @@ recursive-include tests *.py
 recursive-include packaging *.json aura-launcher
 recursive-include scripts *.py
 include docs/images/aura.png
+recursive-include packaging/portable *.LICENSE

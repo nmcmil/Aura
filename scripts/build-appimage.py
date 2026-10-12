@@ -16,6 +16,9 @@ assert hashlib.sha256(a.runtime.read_bytes()).hexdigest()==RUNTIME_SHA256,'Unexp
 a.output.mkdir(parents=True,exist_ok=False)
 appdir=a.output/'AppDir'
 shutil.copytree(a.portable_dir,appdir)
+notices=appdir/'usr/share/licenses/appimage-runtime'
+notices.mkdir(parents=True,exist_ok=True)
+shutil.copy2(Path(__file__).resolve().parents[1]/'packaging/portable/appimage-runtime.LICENSE',notices/'LICENSE')
 (appdir/'AppRun').write_text('''#!/bin/sh
 set -eu
 aura_portable_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
