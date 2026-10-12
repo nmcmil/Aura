@@ -59,6 +59,8 @@ for p in (root/'share/luma-appkit').glob('*.css'):shutil.copy2(p,site/p.name)
 for relative in ('share/glib-2.0/schemas','share/icons/Prairie','share/icons/Adwaita','share/icons/hicolor','share/fonts/google-figtree-fonts','share/licenses'):
  copy(root/relative,Path('usr')/relative)
 shutil.copytree(app/'share',dest/'usr/share',dirs_exist_ok=True)
+# Runtime hicolor cache predates Aura; let GTK discover the new app icon.
+(dest/'usr/share/icons/hicolor/icon-theme.cache').unlink(missing_ok=True)
 icon=dest/'usr/share/icons/hicolor/scalable/apps/io.github.nmcmil.Aura.svg'
 raw=base64.b64decode(ET.parse(icon).getroot()[0].attrib['{http://www.w3.org/1999/xlink}href'].split(',',1)[1])
 assert hashlib.sha256(raw).hexdigest()=='948fa1837bbefae5d814183e5cb76212a7a6d6a2930bb5b2f33238a5ece3a911'
