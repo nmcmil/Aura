@@ -9,7 +9,7 @@
     "--socket=wayland",
     "--socket=fallback-x11",
     "--device=dri",
-    "--filesystem=xdg-data/aura",
+    "--filesystem=xdg-data/aura:create",
     "--filesystem=xdg-data/wally",
     "--env=GSETTINGS_BACKEND=keyfile"
   ],

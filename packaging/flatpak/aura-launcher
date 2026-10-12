@@ -1,4 +1,6 @@
 #!/bin/sh
 set -eu
 export PYTHONPATH="/app/lib/python3.14/site-packages${PYTHONPATH:+:$PYTHONPATH}"
+# Keep the native Aura/Wally library location across packaging changes.
+export XDG_DATA_HOME="$HOME/.local/share"
 exec /usr/bin/python3 -m aura "$@"
