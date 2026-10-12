@@ -13,6 +13,7 @@ from luma_appkit import (AppWindow, Island, Command, CommandGroup, CommandRegist
                          ColorSwatch, IconButton, ActionCenter, BarAction,
                          PanelRow, PanelHeading, PanelField,
                          ToastHost, Toast, MediaTile, TextField, FloatingPanel, CreativeWorkspace, TextButton, PropertySection, PropertyNumber, PropertyChoice, ValueSlider, evaluate_number, apply_type)
+from . import __version__
 from .model import Design, Monitor, PALETTES, EFFECTS, PRESETS, bounds, dimensions
 from .render import pixels, export_png, Cancelled
 from .store import Library
@@ -396,7 +397,7 @@ class Window(AppWindow):
 
     def show_about(self):
         about=Adw.AboutDialog(application_name='Aura',application_icon=APP_ID,
-            version='0.1.0',developer_name='@nmcmil',
+            version=__version__,developer_name='@nmcmil',
             website='https://github.com/nmcmil',
             comments='An independent wallpaper studio for Luma.')
         about.present(self)

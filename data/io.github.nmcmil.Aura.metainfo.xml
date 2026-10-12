@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+<id>io.github.nmcmil.Aura</id>
+<metadata_license>CC0-1.0</metadata_license>
+<name>Aura</name><summary>Create procedural wallpapers and seamless monitor layouts</summary>
+<developer id="io.github.nmcmil"><name>nmcmil</name></developer>
+<description><p>Aura is a native wallpaper studio with seven procedural effects, editable palettes and a live preview. Create wallpapers for desktops, phones and multi-monitor arrangements, save editable designs, and export 8-bit or 16-bit PNGs at their full resolution.</p><p>Aura works offline and requires no account.</p></description>
+<launchable type="desktop-id">io.github.nmcmil.Aura.desktop</launchable>
+<url type="homepage">https://github.com/nmcmil/Aura</url>
+<url type="bugtracker">https://github.com/nmcmil/Aura/issues</url>
+<categories><category>Graphics</category><category>2DGraphics</category></categories>
+<content_rating type="oars-1.1"/>
+<releases><release version="0.1.1" date="2026-10-11"><description><p>Added Depot packaging and fixed settings schema availability in Flatpak menus.</p></description></release></releases>
+<screenshots><screenshot type="default"><caption>Aura wallpaper studio</caption><image type="source" width="1340" height="920">https://dl.simplyluma.com/media/io.github.nmcmil.Aura/3b24007a2be2db6aa754596c5d0e93de1a325191e979fd45a99bc2b99ba0722b.png</image></screenshot></screenshots></component>

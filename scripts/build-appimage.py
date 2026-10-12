@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Seal a portable Aura directory into a single offline AppImage."""
 import argparse
+import tomllib
 import hashlib
 from pathlib import Path
 import shutil
@@ -32,7 +33,8 @@ shutil.copy2(appdir/'usr/share/applications/io.github.nmcmil.Aura.desktop',appdi
 shutil.copy2(appdir/'usr/share/icons/hicolor/256x256/apps/io.github.nmcmil.Aura.png',appdir)
 payload=a.output/'payload.squashfs'
 subprocess.run(['mksquashfs',str(appdir),str(payload),'-noappend','-comp','zstd','-Xcompression-level','15','-processors','2'],check=True)
-image=a.output/'Aura-0.1.0-x86_64.AppImage'
+version=tomllib.loads((Path(__file__).resolve().parents[1]/'pyproject.toml').read_text())['project']['version']
+image=a.output/f'Aura-{version}-x86_64.AppImage'
 with image.open('wb') as out:
  for source in (a.runtime,payload):
   with source.open('rb') as inp:shutil.copyfileobj(inp,out)

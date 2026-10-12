@@ -17,16 +17,16 @@ The app works offline. It has no accounts, telemetry, background service, or aut
 
 ## Run the app
 
-Download the **x86_64 AppImage** from [Releases](https://github.com/nmcmil/Aura/releases). It includes Python, GTK, LumaUI/AppKit, fonts and icons—no separate Luma runtime download or installation is needed.
+Install Aura from Depot on Luma, or download the **x86_64 AppImage** from [Releases](https://github.com/nmcmil/Aura/releases). It includes Python, GTK, LumaUI/AppKit, fonts and icons—no separate Luma runtime download or installation is needed.
 
 Allow the downloaded file to run as a program in your file manager, then open it. From a terminal:
 
 ```sh
-chmod +x Aura-0.1.0-x86_64.AppImage
-./Aura-0.1.0-x86_64.AppImage
+chmod +x Aura-0.1.1-x86_64.AppImage
+./Aura-0.1.1-x86_64.AppImage
 ```
 
-Qualified on Ubuntu 24.04.5, including offline rendering and native controls at 360 pixels. Other Linux distributions, Wayland/GPU combinations and architectures have not all been tested. On systems that disable FUSE, `./Aura-0.1.0-x86_64.AppImage --appimage-extract-and-run` is the runtime's fallback.
+Qualified on Ubuntu 24.04.5, including offline rendering and native controls at 360 pixels. Other Linux distributions, Wayland/GPU combinations and architectures have not all been tested. On systems that disable FUSE, `./Aura-0.1.1-x86_64.AppImage --appimage-extract-and-run` is the runtime's fallback.
 
 ### From source on Luma
 
@@ -79,3 +79,5 @@ A public release license has not been selected. Dependencies retain their own li
 ## Packaging
 
 See [portable-packaging.md](docs/portable-packaging.md) for the self-contained AppImage build. The alternative Flatpak uses a separate Luma runtime; the AppImage is the primary download.
+
+[Flatpak packaging](docs/flatpak-packaging.md) describes the signed-runtime build.

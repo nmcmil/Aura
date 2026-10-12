@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aura-wallpaper"
-version = "0.1.0"
+version = "0.1.1"
 description = "A native wallpaper studio for Luma with a standalone procedural PNG renderer"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,3 +24,5 @@ packages = ["aura"]
 [tool.setuptools.data-files]
 "share/icons/hicolor/scalable/apps" = ["data/io.github.nmcmil.Aura.svg"]
 "share/applications" = ["data/io.github.nmcmil.Aura.desktop"]
+
+"share/metainfo" = ["data/io.github.nmcmil.Aura.metainfo.xml"]

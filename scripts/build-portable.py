@@ -2,7 +2,8 @@
 """Build portable Aura without downloading dependencies or changing its data paths."""
 from pathlib import Path
 import os,json,shutil,subprocess,tarfile,base64,xml.etree.ElementTree as ET,hashlib
-import argparse,re
+import argparse,re,tomllib
+version=tomllib.loads((Path(__file__).resolve().parents[1]/"pyproject.toml").read_text())["project"]["version"]
 parser=argparse.ArgumentParser(description='Build a minimal relocatable Aura directory from a qualified Luma runtime and built application.')
 parser.add_argument('--runtime-files',required=True,type=Path)
 parser.add_argument('--app-files',required=True,type=Path)
@@ -10,7 +11,7 @@ parser.add_argument('--output',required=True,type=Path)
 args=parser.parse_args()
 root=args.runtime_files.resolve();app=args.app_files.resolve();out=args.output.resolve()
 out.mkdir(parents=True,exist_ok=False);dest=out/'Aura';dest.mkdir()
-assert (app/'lib/python3.14/site-packages/aura_wallpaper-0.1.0.dist-info').is_dir()
+assert (app/f'lib/python3.14/site-packages/aura_wallpaper-{version}.dist-info').is_dir()
 assert (root/'lib/python3.14/site-packages/luma_appkit').is_dir()
 # Discover actual ELF dependencies, including NumPy's separately bundled libraries.
 libs={p.name:p for p in (root/'lib64').glob('*.so*')}
@@ -59,6 +60,7 @@ for p in (root/'share/luma-appkit').glob('*.css'):shutil.copy2(p,site/p.name)
 for relative in ('share/glib-2.0/schemas','share/icons/Prairie','share/icons/Adwaita','share/icons/hicolor','share/fonts/google-figtree-fonts','share/licenses'):
  copy(root/relative,Path('usr')/relative)
 shutil.copytree(app/'share',dest/'usr/share',dirs_exist_ok=True)
+subprocess.run(['glib-compile-schemas',str(dest/'usr/share/glib-2.0/schemas')],check=True)
 # Runtime hicolor cache predates Aura; let GTK discover the new app icon.
 (dest/'usr/share/icons/hicolor/icon-theme.cache').unlink(missing_ok=True)
 icon=dest/'usr/share/icons/hicolor/scalable/apps/io.github.nmcmil.Aura.svg'
@@ -83,6 +85,6 @@ exec "$aura_portable_dir/usr/lib64/ld-linux-x86-64.so.2" --inhibit-cache --libra
 '''
 (dest/'python').write_text(launcher);(dest/'python').chmod(0o755)
 (dest/'Aura').write_text('#!/bin/sh\nset -eu\naura_portable_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec "$aura_portable_dir/python" -m aura "$@"\n');(dest/'Aura').chmod(0o755)
-with tarfile.open(out/'Aura-0.1.0-x86_64-portable.tar.gz','w:gz',compresslevel=6) as t:t.add(dest,arcname='Aura')
-print(json.dumps({'uncompressed_bytes':sum(p.stat().st_size for p in dest.rglob('*') if p.is_file() and not p.is_symlink()),'archive_bytes':(out/'Aura-0.1.0-x86_64-portable.tar.gz').stat().st_size}))
+with tarfile.open(out/f'Aura-{version}-x86_64-portable.tar.gz','w:gz',compresslevel=6) as t:t.add(dest,arcname='Aura')
+print(json.dumps({'uncompressed_bytes':sum(p.stat().st_size for p in dest.rglob('*') if p.is_file() and not p.is_symlink()),'archive_bytes':(out/f'Aura-{version}-x86_64-portable.tar.gz').stat().st_size}))
 subprocess.run([str(dest/'python'),'-c','import aura,numpy,gi;from aura.app import Application;print(aura.__file__,numpy.__version__,Application)'],check=True,cwd=out)

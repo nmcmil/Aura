@@ -13,20 +13,52 @@
     "--filesystem=xdg-data/wally",
     "--env=GSETTINGS_BACKEND=keyfile"
   ],
-  "modules": [{
-    "name": "aura",
-    "buildsystem": "simple",
-    "build-commands": [
-      "install -d /app/lib/python3.14/site-packages /app/bin /app/share",
-      "python3 -m zipfile -e aura.whl /app/lib/python3.14/site-packages",
-      "python3 -m zipfile -e numpy.whl /app/lib/python3.14/site-packages",
-      "cp -a /app/lib/python3.14/site-packages/aura_wallpaper-0.1.0.data/data/share/. /app/share/",
-      "install -Dm755 aura-launcher /app/bin/aura"
-    ],
-    "sources": [
-      {"type": "file", "path": "aura.whl"},
-      {"type": "file", "path": "numpy.whl"},
-      {"type": "file", "path": "aura-launcher"}
-    ]
-  }]
+  "modules": [
+    {
+      "name": "aura",
+      "buildsystem": "simple",
+      "build-commands": [
+        "install -d /app/lib/python3.14/site-packages /app/bin /app/share",
+        "python3 -m zipfile -e aura.whl /app/lib/python3.14/site-packages",
+        "python3 -m zipfile -e numpy.whl /app/lib/python3.14/site-packages",
+        "cp -a /app/lib/python3.14/site-packages/aura_wallpaper-0.1.1.data/data/share/. /app/share/",
+        "install -Dm755 aura-launcher /app/bin/aura",
+        "install -Dm644 io.github.nmcmil.Aura.metainfo.xml /app/share/metainfo/io.github.nmcmil.Aura.metainfo.xml",
+        "install -Dm644 org.project_luma.shell-state.gschema.xml /app/share/glib-2.0/schemas/org.project_luma.shell-state.gschema.xml",
+        "glib-compile-schemas /app/share/glib-2.0/schemas",
+        "install -Dm644 luma-shell-state.LICENSE /app/share/licenses/io.github.nmcmil.Aura/luma-shell-state.LICENSE",
+        "install -Dm644 aura.png /app/share/luma-app-media/aura.png"
+      ],
+      "sources": [
+        {
+          "type": "file",
+          "path": "aura.whl"
+        },
+        {
+          "type": "file",
+          "path": "numpy.whl"
+        },
+        {
+          "type": "file",
+          "path": "aura-launcher"
+        },
+        {
+          "type": "file",
+          "path": "io.github.nmcmil.Aura.metainfo.xml"
+        },
+        {
+          "type": "file",
+          "path": "org.project_luma.shell-state.gschema.xml"
+        },
+        {
+          "type": "file",
+          "path": "luma-shell-state.LICENSE"
+        },
+        {
+          "type": "file",
+          "path": "aura.png"
+        }
+      ]
+    }
+  ]
 }

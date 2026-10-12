@@ -3,4 +3,5 @@ set -eu
 export PYTHONPATH="/app/lib/python3.14/site-packages${PYTHONPATH:+:$PYTHONPATH}"
 # Keep the native Aura/Wally library location across packaging changes.
 export XDG_DATA_HOME="$HOME/.local/share"
+export GSETTINGS_SCHEMA_DIR=/app/share/glib-2.0/schemas
 exec /usr/bin/python3 -m aura "$@"
