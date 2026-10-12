@@ -108,6 +108,7 @@ class Window(AppWindow):
                 Command('design.share','Save recipe…',self.share_recipe),
                 Command('library.open','Saved designs',self.show_library,shortcut=('Ctrl','O')),
             )),
+            CommandGroup('Aura',(Command('app.about','About Aura',self.show_about),)),
             CommandGroup('Wallpaper',(
                 Command('studio.style','Choose a style',lambda:self.open_panel('style')),
                 Command('studio.colors','Choose colors',lambda:self.open_panel('colors')),
@@ -392,6 +393,14 @@ class Window(AppWindow):
         for section in pages.values(): panel.append(section)
         panel.append(PropertySection('Defaults',TextButton('Reset adjustments',icon='rotate-ccw',style='fill',small=True,on_click=self.reset_adjustments)))
         return panel
+
+    def show_about(self):
+        about=Adw.AboutDialog(application_name='Aura',application_icon=APP_ID,
+            version='0.1.0',developer_name='@nmcmil',
+            website='https://github.com/nmcmil',
+            comments='An independent wallpaper studio for Luma.')
+        about.present(self)
+        return about
 
     def make_canvas_controls(self):
         panel=box(0)

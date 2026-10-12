@@ -1,0 +1,32 @@
+{
+  "app-id": "io.github.nmcmil.Aura",
+  "runtime": "org.projectluma.Platform",
+  "runtime-version": "44",
+  "sdk": "org.projectluma.Sdk",
+  "command": "aura",
+  "finish-args": [
+    "--share=ipc",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--device=dri",
+    "--filesystem=xdg-data/aura",
+    "--filesystem=xdg-data/wally",
+    "--env=GSETTINGS_BACKEND=keyfile"
+  ],
+  "modules": [{
+    "name": "aura",
+    "buildsystem": "simple",
+    "build-commands": [
+      "install -d /app/lib/python3.14/site-packages /app/bin /app/share",
+      "python3 -m zipfile -e aura.whl /app/lib/python3.14/site-packages",
+      "python3 -m zipfile -e numpy.whl /app/lib/python3.14/site-packages",
+      "cp -a /app/lib/python3.14/site-packages/aura_wallpaper-0.1.0.data/data/share/. /app/share/",
+      "install -Dm755 aura-launcher /app/bin/aura"
+    ],
+    "sources": [
+      {"type": "file", "path": "aura.whl"},
+      {"type": "file", "path": "numpy.whl"},
+      {"type": "file", "path": "aura-launcher"}
+    ]
+  }]
+}
